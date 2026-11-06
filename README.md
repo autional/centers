@@ -1,5 +1,9 @@
 # 配置中心控制台（Centers Console）
 
+**仓库**：<https://github.com/autional/centers>
+**预览**：<https://centers-eight.vercel.app>
+
+
 配置中心的**可编辑后台**原型。技术栈：Vite + React 19 + Ant Design 6 + TypeScript。
 
 ## 结构
