@@ -113,7 +113,8 @@ VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
 - 域 / 组统计走 `GET /groups`，组编辑页的「继承 / 覆盖 / 基座」走 `GET /effective`；
 - 所有写操作（新增/修改/删除/回滚）都弹「变更原因」（1–200 字），随请求写审计；
 - 抽屉里可查看某键的 append-only 版本历史并回滚（回滚需 `config:publish`）；
-- 组编辑器优先读 `GET /editors`（无 schema 的组回落本地注册表 `src/lib/editors.ts`）；
+- 组编辑器优先读 `GET /editors`；服务端已内置 **51 组** schema（启动期 seed 到 `config_editors`），
+  未覆盖的组仍回落本地注册表 `src/lib/editors.ts`；
 - 禁用本地持久化与「重置」；加载 / 空 / 错误 / 403 / 401 均有独立状态页。
 
 令牌存放与安全：`sessionStorage`（关标签即失效），PKCE `S256` + `state` + `nonce` 校验，
