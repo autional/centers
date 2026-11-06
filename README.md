@@ -97,10 +97,24 @@ VITE_OIDC_REDIRECT_URI=https://config.autional.com/oauth/callback
 令牌存放与安全：`sessionStorage`（关标签即失效），PKCE `S256` + `state` + `nonce` 校验，
 不使用 `client_secret`，不把令牌写入 localStorage。
 
+## 导入 / 导出 / 影响面（CC-12）
+
+- **导出**：概览页与域列表页的「导出」下拉 → JSON / YAML。api 模式走 `GET /export`（服务端生成文件，
+  敏感项由服务端替换为遮罩占位 `••••••`，不含任何密钥值）；mock 模式在浏览器本地生成**同结构**文件
+  （`{version, exported_at, tenant_id, app_id, items[], masked_count}`）。
+- **导入**：「导入」→ 选择 JSON / YAML 文件 → 服务端（mock 为本地）预检并给出差异预览
+  （新增 / 修改 / 不变 / 跳过 / 无效）→ 填写原因 → 整批原子提交 `POST /import`。
+  - api 模式预检走 `POST /import/preview`（只读，不写库）；存在「无效」项时整批不可提交。
+  - 导出里的遮罩占位项一律「跳过」：绝不把占位值回灌成真实配置。
+  - mock 模式只做解析与预览，**不提交**任何写入。
+- **影响面**：配置项抽屉（点击键名打开）的「消费方」区块 → `GET /consumers?key=`，数据源 =
+  `shared/infra-ops/docker/allowlist-seed.json`（服务 → 可读密钥键）。数据源不可达时显示
+  `source=unavailable`（不伪造消费方）；mock 模式显示按本机条目的演示占位。
+
 ## 接口契约与任务
 
 - 管理面 API 契约：`D:/ws/autional/butler/plan/config-console/API.md`
-- 前端数据层：`src/lib/{config,auth,api,data}.ts`
+- 前端数据层：`src/lib/{config,auth,api,data,transfer}.ts`（`transfer.ts` = 导入/导出的纯逻辑层）
 
 ## 已定制的组
 
@@ -116,8 +130,8 @@ VITE_OIDC_REDIRECT_URI=https://config.autional.com/oauth/callback
 
 ## 后续
 
-- CC-07/CC-08 已完成：数据层抽象（mock / api）+ OIDC 登录。后续是变更单（草稿 / 发布 / 审批）与批量导入入口
-  （`importBulk` 已在 `src/lib/api.ts` / `src/lib/data.ts` 就绪，UI 暂未暴露，避免改动现有信息架构）。
+- CC-07/CC-08 已完成：数据层抽象（mock / api）+ OIDC 登录；CC-12 已完成：导出 / 导入向导 / 影响面。
+  后续是变更单（草稿 / 发布 / 审批）。
 - 接口契约与任务拆分见 `D:/ws/autional/butler/plan/config-console/`。
 
 ## 约定

@@ -20,6 +20,23 @@ export type Item = {
 export type Scope = '' | string;
 
 export const itemId = (s: string, k: string) => `${s}|${k}`;
+
+/** 后端 value_type → 前端展示类型。json 归到 yaml（结构化），text 归到 scalar。 */
+export function toItemType(valueType?: string): ItemType {
+  switch ((valueType ?? '').toLowerCase()) {
+    case 'int':
+    case 'integer':
+      return 'int';
+    case 'bool':
+    case 'boolean':
+      return 'bool';
+    case 'yaml':
+    case 'json':
+      return 'yaml';
+    default:
+      return 'scalar';
+  }
+}
 export const splitId = (id: string) => {
   const i = id.indexOf('|');
   return { s: id.slice(0, i), k: id.slice(i + 1) };

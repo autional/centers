@@ -85,8 +85,33 @@ function problemMessage(res: Response, problem: ProblemBody): string {
 
 /** 统一请求入口：带作用域头、可被 401 触发一次静默续期、错误归一为 ApiError。 */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const res = await send(path, options, 'application/json');
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError(res.status, '响应不是合法 JSON');
+  }
+}
+
+/**
+ * 取原始文本（导出接口返回 JSON/YAML 文件体，不是统一 JSON 信封）。
+ * 401 重试/错误归一口径与 request 完全一致。
+ */
+export async function requestText(path: string, options: RequestOptions = {}): Promise<string> {
+  const res = await send(path, { timeoutMs: 60_000, ...options }, '*/*');
+  return res.text();
+}
+
+/**
+ * 发请求并归一错误（401 可静默续期一次）。`request` / `requestText` 共用本函数，
+ * 保证鉴权、超时、错误文案只有一套实现。
+ */
+async function send(path: string, options: RequestOptions, accept: string): Promise<Response> {
   const { method = 'GET', query, body, retried = false, timeoutMs = 20_000 } = options;
-  const headers: Record<string, string> = { Accept: 'application/json', ...scopeHeaders() };
+  const headers: Record<string, string> = { Accept: accept, ...scopeHeaders() };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   const controller = new AbortController();
@@ -110,7 +135,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (res.status === 401) {
     if (!retried && AUTH_MODE === 'oidc') {
       const renewed = await refreshSession();
-      if (renewed) return request<T>(path, { ...options, retried: true });
+      if (renewed) return send(path, { ...options, retried: true }, accept);
     }
     const problem = await parseProblem(res);
     window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
@@ -121,15 +146,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     const problem = await parseProblem(res);
     throw new ApiError(res.status, problemMessage(res, problem), problem?.code ?? '', problem?.detail ?? '');
   }
-
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  if (!text) return undefined as T;
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new ApiError(res.status, '响应不是合法 JSON');
-  }
+  return res;
 }
 
 /* ------------------------------- 响应形状 ------------------------------- */
@@ -357,6 +374,7 @@ export function importBulk(input: { entries: ImportEntry[]; replace_existing?: b
   results: ImportOutcome[];
   applied: number;
   rejected: number;
+  skipped?: number;
 }> {
   return request('/import', {
     method: 'POST',
@@ -366,4 +384,49 @@ export function importBulk(input: { entries: ImportEntry[]; replace_existing?: b
       entries: input.entries,
     },
   });
+}
+
+/* ------------------------ 导出 / 导入预检 / 影响面（CC-12） ------------------------ */
+
+export type ExportFormat = 'json' | 'yaml';
+
+/**
+ * 全量导出（`GET /export`）：返回文件体（JSON 或 YAML 文本，同一结构）。
+ * 敏感/密钥项已由服务端替换为遮罩占位（`masked` item），绝不携带真实密钥值。
+ */
+export function exportConfig(format: ExportFormat): Promise<string> {
+  return requestText('/export', { query: { format } });
+}
+
+/** 导入预检条目（与 /import 的 entries 同结构；tenant/app 由令牌决定）。 */
+export type ImportPreviewRow = {
+  service_name: string;
+  key: string;
+  action: 'create' | 'update' | 'unchanged' | 'invalid' | 'skipped';
+  value: string;
+  value_type: string;
+  current_value?: string | null;
+  reason?: string;
+};
+
+export type ImportPreviewCounts = { create: number; update: number; unchanged: number; invalid: number; skipped: number };
+
+/** 导入预检结果：`writable=false` 表示存在 invalid（提交会被整批拒绝）。 */
+export type ImportPreviewResult = { items: ImportPreviewRow[]; counts: ImportPreviewCounts; writable: boolean };
+
+/** 导入预检（`POST /import/preview`）：**只读**，不写库、不产生 revision。 */
+export function previewImport(input: { entries: ImportEntry[] }): Promise<ImportPreviewResult> {
+  return request('/import/preview', { method: 'POST', body: { entries: input.entries } });
+}
+
+/** 影响面：该键可能被哪些服务读取（数据源 = allowlist；不可达时 source=unavailable）。 */
+export type ConsumersResult = {
+  key: string;
+  services: string[];
+  source: 'allowlist' | 'unavailable';
+  note?: string;
+};
+
+export function consumers(key: string): Promise<ConsumersResult> {
+  return request('/consumers', { query: { key } });
 }

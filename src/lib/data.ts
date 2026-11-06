@@ -9,9 +9,11 @@
  */
 import * as api from './api';
 import { DATA_MODE } from './config';
-import { DOMAIN_META, applyOverrides, buildMeta, clearOverrides, itemId, loadOverrides, saveOverrides } from './model';
-import type { DomainStat, GroupStat, Item, ItemType } from './model';
+import { DOMAIN_META, applyOverrides, buildMeta, clearOverrides, itemId, loadOverrides, saveOverrides, toItemType } from './model';
+import type { DomainStat, GroupStat, Item } from './model';
 import type { Field, GroupEditor } from './editors';
+import { buildExportDoc, demoConsumers, diffEntries, stringifyExport } from './transfer';
+import type { ParsedEntry } from './transfer';
 
 export type Meta = ReturnType<typeof buildMeta>;
 
@@ -22,22 +24,8 @@ export type HistoryEntry = api.HistoryItem;
 
 export const EMPTY_META: Meta = { domains: [], total: 0, base: 0, svc: 0, services: [] };
 
-/** 后端 value_type → 前端展示类型。json 归到 yaml（结构化），text 归到 scalar。 */
-export function toItemType(valueType?: string): ItemType {
-  switch ((valueType ?? '').toLowerCase()) {
-    case 'int':
-    case 'integer':
-      return 'int';
-    case 'bool':
-    case 'boolean':
-      return 'bool';
-    case 'yaml':
-    case 'json':
-      return 'yaml';
-    default:
-      return 'scalar';
-  }
-}
+/** 后端 value_type → 前端展示类型（单源在 lib/model.ts，这里保留同名再导出）。 */
+export { toItemType } from './model';
 
 const FALLBACK_DOMAIN = '未分组';
 const FALLBACK_GROUP = '未分组';
@@ -122,7 +110,21 @@ export type Store = {
   importBulk(entries: api.ImportEntry[], replaceExisting: boolean, reason: string): Promise<api.ImportOutcome[]>;
   effective(scope: string, domain: string, group: string): Promise<EffectiveRow[] | null>;
   editor(domain: string, group: string): Promise<GroupEditor | null>;
+  /** 导出文件文本（mock 本地生成；api 走后端 `/export`，含服务端遮罩）。 */
+  exportConfig(format: api.ExportFormat): Promise<string>;
+  /** 导入预检/差异（mock 本地计算；api 走 `/import/preview`，只读不写库）。 */
+  previewImport(entries: ParsedEntry[]): Promise<api.ImportPreviewResult>;
+  /** 影响面：该键可能被哪些服务读取（mock 用本地演示数据，source=demo）。 */
+  consumers(key: string): Promise<ConsumersInfo>;
   reset(): void;
+};
+
+/** 影响面视图（api: allowlist|unavailable；mock: demo）。 */
+export type ConsumersInfo = {
+  key: string;
+  services: string[];
+  source: 'allowlist' | 'unavailable' | 'demo';
+  note?: string;
 };
 
 /* --------------------------------- mock --------------------------------- */
@@ -174,6 +176,20 @@ const mockStore: Store = {
 
   async editor() {
     return null;
+  },
+
+  async exportConfig(format) {
+    // mock：本地生成与后端同结构的文件（敏感项在演示数据里已是遮罩占位，原样搬运）。
+    return stringifyExport(buildExportDoc(applyOverrides(loadOverrides())), format);
+  },
+
+  async previewImport(entries) {
+    // mock：只在本地算差异，绝不写任何存储（提交入口在 mock 模式被禁用）。
+    return diffEntries(entries, applyOverrides(loadOverrides()));
+  },
+
+  async consumers(key) {
+    return demoConsumers(key, applyOverrides(loadOverrides()));
   },
 
   reset() {
@@ -258,6 +274,27 @@ const apiStore: Store = {
       if (err instanceof api.ApiError && (err.status === 404 || err.status === 400)) return null;
       throw err;
     }
+  },
+
+  async exportConfig(format) {
+    return api.exportConfig(format);
+  },
+
+  async previewImport(entries) {
+    // 后端为权威预检（与 /import 同一套规则）；剥掉本地 masked 字段再提交。
+    const body = entries.map((e) => ({
+      service_name: e.service_name,
+      key: e.key,
+      value: e.value,
+      value_type: e.value_type,
+      validation: e.validation,
+    }));
+    return api.previewImport({ entries: body });
+  },
+
+  async consumers(key) {
+    const res = await api.consumers(key);
+    return { key: res.key, services: res.services ?? [], source: res.source, note: res.note };
   },
 
   reset() {

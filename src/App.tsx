@@ -28,6 +28,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  Upload,
 } from 'antd';
 import type { MenuProps, TableProps } from 'antd';
 import { DOMAIN_META, aggregate, groupEffective, isRule, itemId, scopeLabel, servicesInGroup } from './lib/model';
@@ -38,8 +39,11 @@ import { API_BASE, AUTH_MODE, DATA_MODE, isCallbackPath, OIDC, RUNTIME_MODE_LABE
 import { completeLogin, restoreSession, signOut, startLogin } from './lib/auth';
 import type { Session } from './lib/auth';
 import { UNAUTHORIZED_EVENT } from './lib/api';
+import type { ExportFormat, ImportPreviewResult, ImportPreviewRow } from './lib/api';
 import { EMPTY_META, errorStatus, errorText, store } from './lib/data';
-import type { EffectiveRow, HistoryEntry, Meta } from './lib/data';
+import type { ConsumersInfo, EffectiveRow, HistoryEntry, Meta } from './lib/data';
+import { downloadText, exportFilename, parseImportText, toImportEntries } from './lib/transfer';
+import type { ParsedImport } from './lib/transfer';
 import './styles.css';
 
 const { Text } = Typography;
@@ -124,6 +128,7 @@ function Console() {
   const [viewing, setViewing] = useState<{ domain: string; key: string } | null>(null);
   const [pending, setPending] = useState<PendingWrite | null>(null);
   const [busy, setBusy] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const needsLogin = !session && (REQUIRE_AUTH || DATA_MODE === 'api');
 
@@ -245,6 +250,17 @@ function Console() {
     store.reset();
     await load(true);
     message.success('已恢复演示数据');
+  };
+
+  /** 导出：mock 本地生成文件，api 走后端 `/export`（敏感项已在服务端遮罩）。 */
+  const doExport = async (format: ExportFormat) => {
+    try {
+      const text = await store.exportConfig(format);
+      downloadText(exportFilename(format), text, format === 'yaml' ? 'application/yaml' : 'application/json');
+      message.success(`已导出 ${format.toUpperCase()}（敏感项已脱敏，不含密钥值）`);
+    } catch (err) {
+      message.error(errorText(err));
+    }
   };
 
   const userMenuItems: MenuProps['items'] = session
@@ -373,7 +389,7 @@ function Console() {
             <Empty description={store.localWrites ? '演示数据为空' : '该租户 / 应用下暂无配置项'} />
           </div>
         ) : !route.domain ? (
-          <Overview meta={meta} go={go} />
+          <Overview meta={meta} go={go} onExport={(f) => void doExport(f)} onImport={() => setImportOpen(true)} />
         ) : route.edit ? (
           route.group ? (
             <GroupEditorPage
@@ -397,6 +413,8 @@ function Console() {
             onOpen={setModal}
             onDelete={(it) => requestWrite({ kind: 'delete', item: it })}
             onView={(key) => setViewing({ domain: route.domain!, key })}
+            onExport={(f) => void doExport(f)}
+            onImport={() => setImportOpen(true)}
           />
         )}
       </Layout.Content>
@@ -429,6 +447,15 @@ function Console() {
           busy={busy}
           onCancel={() => setPending(null)}
           onConfirm={(reason) => void performWrite(pending, reason)}
+        />
+      ) : null}
+      {importOpen ? (
+        <ImportWizard
+          onClose={() => setImportOpen(false)}
+          onDone={async () => {
+            setImportOpen(false);
+            await load(true);
+          }}
         />
       ) : null}
     </Layout>
@@ -529,12 +556,207 @@ function WriteDescription({ write }: { write: PendingWrite }) {
   );
 }
 
+/* --------------------------- 导入 / 导出（CC-12） --------------------------- */
+
+/** 导出（JSON/YAML 下拉）+ 导入入口：概览页与域列表页共用，不改变页面信息架构。 */
+function TransferActions({ onExport, onImport }: { onExport: (format: ExportFormat) => void; onImport: () => void }) {
+  return (
+    <Space size={8} className="transfer-actions">
+      <Dropdown
+        menu={{
+          items: [
+            { key: 'json', label: '导出 JSON' },
+            { key: 'yaml', label: '导出 YAML' },
+          ],
+          onClick: ({ key }) => onExport(key as ExportFormat),
+        }}
+      >
+        <Button>导出</Button>
+      </Dropdown>
+      <Button onClick={onImport}>导入</Button>
+    </Space>
+  );
+}
+
+const IMPORT_ACTION_TAG: Record<ImportPreviewRow['action'], { color: string; label: string }> = {
+  create: { color: 'green', label: '新增' },
+  update: { color: 'blue', label: '修改' },
+  unchanged: { color: 'default', label: '不变' },
+  invalid: { color: 'red', label: '无效' },
+  skipped: { color: 'orange', label: '跳过' },
+};
+
+/**
+ * 导入向导：选择文件（YAML/JSON）→ 解析 → 差异预览 → 填原因 → 提交。
+ * 差异以数据层为权威：api 模式调 `/import/preview`（只读不写库），mock 模式本地计算且**不提交**。
+ */
+function ImportWizard(props: { onClose: () => void; onDone: () => Promise<void> }) {
+  const { message } = AntdApp.useApp();
+  const [fileName, setFileName] = useState('');
+  const [parsed, setParsed] = useState<ParsedImport | null>(null);
+  const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const trimmed = reason.trim();
+  const canSubmit = !store.localWrites && !!preview?.writable && trimmed.length > 0 && trimmed.length <= 200;
+
+  const handleFile = async (file: File) => {
+    setFileName(file.name);
+    setError('');
+    setParsed(null);
+    setPreview(null);
+    setBusy(true);
+    try {
+      const next = parseImportText(await file.text(), file.name);
+      setParsed(next);
+      setPreview(await store.previewImport(next.entries));
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = async () => {
+    if (!preview || !canSubmit) return;
+    const entries = toImportEntries(preview.items);
+    if (!entries.length) {
+      message.warning('没有需要提交的变更（全部为「不变」或「跳过」项）');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const results = await store.importBulk(entries, true, trimmed);
+      const applied = results.filter((r) => r.ok).length;
+      message.success(`导入完成：写入 ${applied} 条（整批原子；原因已进审计）`);
+      await props.onDone();
+    } catch (err) {
+      message.error(errorText(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title="导入配置"
+      width={880}
+      onCancel={props.onClose}
+      destroyOnHidden
+      footer={
+        <Space>
+          <Button onClick={props.onClose}>{store.localWrites ? '关闭' : '取消'}</Button>
+          {store.localWrites ? (
+            <Button type="primary" disabled={!preview} onClick={props.onClose}>
+              完成预览（演示不提交）
+            </Button>
+          ) : (
+            <Button type="primary" disabled={!canSubmit} loading={submitting} onClick={() => void submit()}>
+              提交导入
+            </Button>
+          )}
+        </Space>
+      }
+    >
+      <Alert
+        className="banner"
+        type={store.localWrites ? 'warning' : 'info'}
+        showIcon
+        message={
+          store.localWrites
+            ? '演示模式：只做解析与差异预览，不会提交任何写入。切换 VITE_DATA_MODE=api 后可真实导入。'
+            : '导入先做预检与差异预览（不写库），确认后整批原子提交；任一预检失败整批不写。'
+        }
+      />
+      <Space size={8} wrap className="import-toolbar">
+        <Upload
+          accept=".json,.yaml,.yml"
+          showUploadList={false}
+          beforeUpload={(file) => {
+            void handleFile(file as File);
+            return false;
+          }}
+        >
+          <Button>选择文件</Button>
+        </Upload>
+        <Text type="secondary" className="hint">
+          {fileName ? `已选择：${fileName}` : '支持导出的 JSON / YAML 文件，或条目数组'}
+        </Text>
+        {busy ? <Spin size="small" /> : null}
+      </Space>
+      {error ? <Alert type="error" showIcon message={error} /> : null}
+      {parsed ? (
+        <div className="hint import-parsed">
+          解析到 {parsed.entries.length} 条（{parsed.format.toUpperCase()}）
+          {parsed.tenantId ? ` · 文件租户 ${parsed.tenantId}（以当前登录租户为准）` : ''}
+        </div>
+      ) : null}
+      {preview ? (
+        <>
+          <Space size={6} wrap className="import-counts">
+            <Tag color="green">新增 {preview.counts.create}</Tag>
+            <Tag color="blue">修改 {preview.counts.update}</Tag>
+            <Tag>不变 {preview.counts.unchanged}</Tag>
+            <Tag color="orange">跳过 {preview.counts.skipped}</Tag>
+            <Tag color={preview.counts.invalid ? 'red' : 'default'}>无效 {preview.counts.invalid}</Tag>
+            {!preview.writable ? <Tag color="red">存在无效项：整批不可提交</Tag> : null}
+          </Space>
+          <Table
+            size="small"
+            rowKey={(r) => `${r.service_name}|${r.key}`}
+            dataSource={preview.items}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
+            scroll={{ y: 300 }}
+            columns={[
+              {
+                title: '动作',
+                dataIndex: 'action',
+                width: 90,
+                render: (v: ImportPreviewRow['action']) => <Tag color={IMPORT_ACTION_TAG[v].color}>{IMPORT_ACTION_TAG[v].label}</Tag>,
+              },
+              { title: '服务', dataIndex: 'service_name', width: 150, render: (v: string) => scopeLabel(v) },
+              { title: '键', dataIndex: 'key', render: (v: string) => <code className="mono">{v}</code> },
+              { title: '新值', dataIndex: 'value', ellipsis: true, render: (v: string) => <span className="mono small">{valueText(v)}</span> },
+              {
+                title: '现值',
+                dataIndex: 'current_value',
+                ellipsis: true,
+                render: (v: string | null | undefined) => <span className="mono small">{v === null || v === undefined ? '—' : valueText(v)}</span>,
+              },
+              { title: '说明', dataIndex: 'reason', ellipsis: true, render: (v?: string) => <Text type="secondary" className="small">{v || ''}</Text> },
+            ]}
+          />
+          {!store.localWrites ? (
+            <Input.TextArea
+              className="import-reason"
+              rows={2}
+              maxLength={200}
+              showCount
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="导入原因（必填 1–200 字，写入审计）"
+            />
+          ) : null}
+        </>
+      ) : null}
+    </Modal>
+  );
+}
+
 /* ------------------------------- 概览 ------------------------------- */
 
-function Overview({ meta, go }: { meta: Meta; go: (r: Route) => void }) {
+function Overview(props: { meta: Meta; go: (r: Route) => void; onExport: (format: ExportFormat) => void; onImport: () => void }) {
+  const { meta, go, onExport, onImport } = props;
   return (
     <>
-      <h1 className="page">配置中心概览</h1>
+      <div className="page-head">
+        <h1 className="page">配置中心概览</h1>
+        <TransferActions onExport={onExport} onImport={onImport} />
+      </div>
       <p className="desc">按「配置域 → 配置组 → 配置项」组织。域用于导航和统计，编辑在配置组。</p>
       <Row gutter={12} className="stats">
         <Col span={4}>
@@ -671,9 +893,11 @@ function DomainPage(props: {
   onOpen: (s: ModalState) => void;
   onDelete: (it: Item) => void;
   onView: (key: string) => void;
+  onExport: (format: ExportFormat) => void;
+  onImport: () => void;
 }) {
   const { message } = AntdApp.useApp();
-  const { domain, items, meta, go, onOpen, onDelete, onView } = props;
+  const { domain, items, meta, go, onOpen, onDelete, onView, onExport, onImport } = props;
   const d = meta.domains.find((x) => x.name === domain);
   const [group, setGroup] = useState<string>('');
   const [service, setService] = useState<string>('all');
@@ -815,6 +1039,7 @@ function DomainPage(props: {
             value="list"
             onChange={(v) => v === 'edit' && go({ domain, edit: true, group: group || undefined })}
           />
+          <TransferActions onExport={onExport} onImport={onImport} />
         </Space>
       </div>
 
@@ -1375,12 +1600,36 @@ function PlacementDrawer(props: {
   const [histLoading, setHistLoading] = useState(false);
   const [histError, setHistError] = useState('');
   const [histItem, setHistItem] = useState<Item | null>(null);
+  // 消费方（影响面，CC-12）：哪些服务可能读取该键。mock 模式返回演示数据（source=demo）。
+  const [consumers, setConsumers] = useState<ConsumersInfo | null>(null);
+  const [consumersError, setConsumersError] = useState('');
 
   useEffect(() => {
     setHistId('');
     setHistRows(null);
     setHistError('');
     setHistItem(null);
+  }, [state?.domain, state?.key]);
+
+  useEffect(() => {
+    if (!state) {
+      setConsumers(null);
+      return;
+    }
+    let alive = true;
+    setConsumers(null);
+    setConsumersError('');
+    store
+      .consumers(state.key)
+      .then((next) => {
+        if (alive) setConsumers(next);
+      })
+      .catch((err) => {
+        if (alive) setConsumersError(errorText(err));
+      });
+    return () => {
+      alive = false;
+    };
   }, [state?.domain, state?.key]);
 
   const list = state ? items.filter((x) => x.d === state.domain && x.k === state.key).sort((a, b) => (a.s || '').localeCompare(b.s || '')) : [];
@@ -1448,6 +1697,32 @@ function PlacementDrawer(props: {
               );
             })}
           </div>
+
+          <div className="sub-title">消费方 · 可能读取该键的服务</div>
+          {consumersError ? (
+            <Alert type="error" showIcon message={consumersError} />
+          ) : !consumers ? (
+            <div className="page-state">
+              <Spin size="small" />
+            </div>
+          ) : consumers.source === 'unavailable' ? (
+            <Alert type="warning" showIcon message="影响面数据源不可达" description={consumers.note || 'allowlist 白名单未挂载或不可读。'} />
+          ) : consumers.services.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={consumers.source === 'demo' ? '演示数据：本机没有服务显式定义该键' : '没有服务在 allowlist 中声明读取该键'}
+            />
+          ) : (
+            <Space size={4} wrap>
+              {consumers.services.map((s) => (
+                <Tag key={s} color="geekblue">
+                  {s}
+                </Tag>
+              ))}
+            </Space>
+          )}
+          {consumers?.source === 'demo' && consumers.note ? <div className="hint">{consumers.note}</div> : null}
+          {consumers?.source === 'allowlist' ? <div className="hint">数据源：infra-ops allowlist（服务 → 可读密钥键）。</div> : null}
 
           {historyFor && histId ? (
             <>

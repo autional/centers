@@ -388,6 +388,24 @@ code,
   margin-bottom: 12px;
   font-size: 13px;
 }
+
+/* ------------------------- 导入 / 导出（CC-12） ------------------------- */
+
+.transfer-actions {
+  flex: none;
+}
+.import-toolbar {
+  margin: 12px 0 8px;
+}
+.import-parsed {
+  margin-bottom: 8px;
+}
+.import-counts {
+  margin: 8px 0;
+}
+.import-reason {
+  margin-top: 10px;
+}
 .user-who {
   min-width: 160px;
   line-height: 1.35;
