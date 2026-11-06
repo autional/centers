@@ -2,6 +2,7 @@
 
 **仓库**：<https://github.com/autional/config>
 **域名**：[config.autional.com](https://config.autional.com) · [config.autional.cn](https://config.autional.cn)
+**Vercel 双项目**：`config`（com，`API_ORIGIN=https://api.autional.com`）· `cn-config`（cn，`API_ORIGIN=https://api.autional.cn`），配置见 `vercel.ts`。
 
 
 配置中心的**可编辑后台**原型。技术栈：Vite + React 19 + Ant Design 6 + TypeScript。
