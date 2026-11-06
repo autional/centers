@@ -128,7 +128,7 @@ export default function Root() {
             <span className="mark">A</span>
             <span>配置中心</span>
             <Text type="secondary" className="sub">
-              Centers Console
+              Config Console
             </Text>
           </div>
           <nav className="nav">

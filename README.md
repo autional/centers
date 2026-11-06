@@ -1,7 +1,7 @@
-# 配置中心控制台（Centers Console）
+# 配置中心控制台（Config Console）
 
-**仓库**：<https://github.com/autional/centers>
-**预览**：<https://centers-eight.vercel.app>
+**仓库**：<https://github.com/autional/config>
+**预览**：<https://config.autional.com>
 
 
 配置中心的**可编辑后台**原型。技术栈：Vite + React 19 + Ant Design 6 + TypeScript。
@@ -21,8 +21,8 @@
 
 ## 部署
 
-`main` 推送 → Vercel 自动部署（项目 `centers`）。
-生产地址：<https://centers-eight.vercel.app>
+`main` 推送 → Vercel 自动部署（项目 `config`）。
+生产地址：<https://config.autional.com>
 
 ## 运行
 
@@ -59,7 +59,7 @@ npm run preview
 3. 组编辑器 schema 持久化（按组存，随配置走）。
 4. 草稿 / 发布 / 回滚 / 审计原因。
 
-接口契约与任务拆分见工作区 `D:\wsutional` 的 `butler/plan/centers-console/`。
+接口契约与任务拆分见 `D:/ws/autional/butler/plan/config-console/`。
 
 ## 约定
 
