@@ -66,13 +66,13 @@ npm run test:watch
 |---|---|---|
 | `VITE_DATA_MODE` | `mock` | `mock` = 本地演示数据 + localStorage；`api` = 调配置中心管理面（需后端 + JWT） |
 | `VITE_AUTH_MODE` | `mock` | `mock` = 演示会话（平台管理员）；`oidc` = 授权码 + PKCE 登录 |
-| `VITE_API_BASE` | `/bff/config/api/v1/admin/config` | 管理面基址。默认走同源 `/bff/...`，由 `vercel.json` 的 rewrites 代理到 `api.autional.com`（服务端代理，无 CORS） |
+| `VITE_API_BASE` | `/bff/config/api/v1/admin/config` | 管理面基址。默认走同源 `/bff/...`，由 `vercel.ts` 的 rewrites 代理到 `API_ORIGIN`（com/cn 各自 API，服务端代理，无 CORS） |
 | `VITE_TENANT_ID` | 空 | 租户兜底（JWT 已带 `tenant_id` 时以令牌为准） |
 | `VITE_APP_ID` | 空 | 应用兜底（空 = 平台应用） |
 | `VITE_REQUIRE_AUTH` | 空 | `1` = 未登录先进登录页；默认放开（mock 演示可直接看） |
 | `VITE_OIDC_AUTHORIZE` | `https://auth.autional.com/oauth/api/v1/oauth/authorize` | 授权端点（浏览器跳转） |
-| `VITE_OIDC_TOKEN` | `https://api.autional.com/bff/oauth/api/v1/oauth/token` | 令牌端点（换票/刷新） |
-| `VITE_OIDC_CLIENT_ID` | 空 | OAuth 客户端 ID（公开客户端，`is_confidential=false`） |
+| `VITE_OIDC_TOKEN` | `https://api.autional.com/bff/oauth/api/v1/oauth/token` | 令牌端点（换票/刷新）；**生产部署用同源 `/bff/oauth/api/v1/oauth/token`**，由 `vercel.ts` 代理，避免 CORS |
+| `VITE_OIDC_CLIENT_ID` | 空 | OAuth 客户端 ID（公开客户端，`is_confidential=false`）。当前环境用 `01AR0000000000000000000008`（Platform Console OAuth Client，已登记 config com/cn 回调） |
 | `VITE_OIDC_REDIRECT_URI` | `${origin}/oauth/callback` | 回调地址；**必须与客户端登记的 `redirect_uris` 逐字一致**（无尾斜杠） |
 | `VITE_OIDC_SCOPE` | `openid profile email` | 授权范围 |
 
@@ -99,9 +99,13 @@ VITE_DATA_MODE=mock npm run build
 VITE_DATA_MODE=api
 VITE_AUTH_MODE=oidc
 VITE_REQUIRE_AUTH=1
-VITE_OIDC_CLIENT_ID=client-xxxxxxxx
+VITE_OIDC_CLIENT_ID=01AR0000000000000000000008
+VITE_TENANT_ID=01KSQCBNVMS6SX64PJS937CE33
 VITE_OIDC_REDIRECT_URI=https://config.autional.com/oauth/callback
-# VITE_API_BASE 默认即可（同源 /bff，由 vercel.json 代理）
+VITE_OIDC_AUTHORIZE=https://auth.autional.com/oauth/api/v1/oauth/authorize
+VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
+# VITE_API_BASE 默认即可（同源 /bff，由 vercel.ts 代理）
+# .cn 项目把域名/授权端点换成 config.autional.cn / auth.autional.cn
 ```
 
 行为差异：
@@ -114,6 +118,23 @@ VITE_OIDC_REDIRECT_URI=https://config.autional.com/oauth/callback
 
 令牌存放与安全：`sessionStorage`（关标签即失效），PKCE `S256` + `state` + `nonce` 校验，
 不使用 `client_secret`，不把令牌写入 localStorage。
+
+### 2026-11-06 上线实况与排障
+
+- Vercel `config`(com) / `cn-config`(cn) 已设 `VITE_DATA_MODE=api`、`VITE_AUTH_MODE=oidc`、
+  `VITE_REQUIRE_AUTH=1`、平台客户端 `01AR...008`、`VITE_TENANT_ID=01KSQCBNVMS6SX64PJS937CE33`；
+  令牌端点走同源 `/bff/oauth/api/v1/oauth/token`。
+- 登录拿到的是 **RS256** access token，`entry_plane=admin`；`iss/aud` 是
+  `https://api.autional.cn`（com 为 `https://api.autional.com`），不是 `identity-service`。
+- 平台管理员的 JWT 租户是 `platform`，但配置基座是全局 `tenant_id=''`、`app_id=''`；
+  后端已把平台管理员归一到基座，前端无需传空参数。
+- 首屏会拉全量（2,025 条 ÷ 100/页 ≈ 21 次请求），“正在加载配置…”持续几秒是正常的。
+- 常见错误与处理：
+  - `401 invalid token`：后端 RS256 公钥/iss/aud 没对齐（先查 config-service，不是前端 token 丢了）。
+  - `403 entry_plane_forbidden`：OAuth 的 config 门户未映射 `admin` 平面，需重新登录拿新 token。
+  - `503 role lookup failed`：RBAC 权限 ID 非法（必须 ULID）。
+  - `400 tenant_id 必填` / 列表为空：平台基座作用域没归一。
+- 更完整的后端/运维说明见 workspace `docs/CONFIG-CONSOLE-AUTH.md`。
 
 ## 导入 / 导出 / 影响面（CC-12）
 
