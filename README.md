@@ -33,6 +33,23 @@ npm run build     # 产物 dist/
 npm run preview
 ```
 
+## 测试
+
+```bash
+npm test          # vitest run（纯逻辑单测，node 环境，无需 jsdom）
+npm run test:watch
+```
+
+覆盖 `src/lib/` 的纯逻辑层（不触 DOM / 网络）：
+
+- `transfer.ts`：导出结构与排序、JSON/YAML 往返、遮罩项 skipped、`toImportEntries` 过滤、
+  非法条目（键/类型/值）判 invalid、`diffEntries` 计数（create/update/unchanged/invalid/skipped）。
+- `model.ts`：域/组统计与未知域回退（`DOMAIN_META` 缺省）、`effective` 生效语义（base/override，
+  inherit 由 API 侧映射）、`aggregate` 按 key 去重与 N 种取值（distinct，遮罩值不计入）+ 过滤/排序。
+
+配置在 `vitest.config.ts`（`environment: 'node'`，`include: ['src/**/*.test.ts']`）。
+
+
 ## 演示数据（默认）
 
 `src/data/inventory.json`：来自配置中心真实预检（2,020 个唯一键、69 个配置组、27 个服务），

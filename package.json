@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite --port 13120",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --port 13120"
+    "preview": "vite preview --port 13120",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "antd": "^6.5.0",
@@ -20,6 +22,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.4.0",
     "typescript": "^5.8.0",
-    "vite": "^6.4.0"
+    "vite": "^6.4.0",
+    "vitest": "^5.1.0"
   }
 }
