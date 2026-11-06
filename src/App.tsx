@@ -51,6 +51,26 @@ import './styles.css';
 
 const { Text } = Typography;
 
+/* ------------------------------ 密钥中心（跨门户） ------------------------------ */
+
+/**
+ * 密钥中心站点地址：构建期 `VITE_SECRET_CENTER_URL` 优先，否则按当前域名后缀推导。
+ * 只用于两处导航（顶栏「密钥中心」与配置项抽屉「去密钥中心」）；
+ * 门户切换本身走平台目录（见 lib/portal.ts），不在此维护门户清单。
+ */
+export const SECRET_CENTER_URL = (() => {
+  const fromEnv = String(import.meta.env?.VITE_SECRET_CENTER_URL ?? '').trim();
+  if (fromEnv) return fromEnv.replace(/\/+$/, '');
+  const host = typeof window === 'undefined' ? '' : window.location.hostname;
+  return host.endsWith('.cn') ? 'https://secret.autional.cn' : 'https://secret.autional.com';
+})();
+
+/** 深链：`#/secrets?key=<key>`，密钥中心按 key 直接打开详情（不传值）。 */
+export function secretCenterUrl(key?: string): string {
+  const base = SECRET_CENTER_URL;
+  return key ? `${base}/#/secrets?key=${encodeURIComponent(key)}` : base;
+}
+
 type Route = { domain?: string; edit?: boolean; group?: string; changes?: boolean };
 type ModalState = { mode: 'add' | 'edit'; item: Item; domain: string; group: string; scope: Scope; suggestedKey?: string };
 type Status = 'loading' | 'ready' | 'error' | 'forbidden' | 'unauthorized';
@@ -327,8 +347,10 @@ function Console() {
           <a className={route.domain ? 'on' : ''} href={href({ domain: meta.domains[0]?.name })}>
             配置域
           </a>
-          {/* 密钥中心由独立门户/另一 session 负责；本仓保持占位，不接未上线的地址 */}
-          <span className="nav-disabled">密钥中心</span>
+          {/* 密钥中心是独立门户；直达入口在顶栏，门户切换由 PortalMenu 统一列目录 */}
+          <a className="nav-link" href={SECRET_CENTER_URL} target="_blank" rel="noreferrer">
+            密钥中心
+          </a>
           <a className={route.changes ? 'on' : ''} href="#/changes">
             变更记录
           </a>
@@ -1577,8 +1599,8 @@ function FieldRow(props: { field: Field; resolved: { it: Item; src: 'base' | 'ov
         <div className="field-value mono">{k}</div>
         <div className="field-src" />
         <div className="field-op">
-          <Tooltip title="密钥值在密码中心管理">
-            <Button size="small" type="link" disabled>
+          <Tooltip title="密钥值在密钥中心管理；按 key 跳转，不传值">
+            <Button size="small" type="link" href={secretCenterUrl(k)} target="_blank" rel="noreferrer">
               去密钥中心
             </Button>
           </Tooltip>
