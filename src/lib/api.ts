@@ -542,3 +542,113 @@ export function reveal(input: RevealInput): Promise<RevealResult> {
     },
   });
 }
+
+/* --------------------------------- 变更单 --------------------------------- */
+
+/**
+ * 变更单（`/changesets`，CC-04）：把一批待生效条目存成草稿，确认后一次性发布。
+ *
+ * 契约（后端 T15）：
+ *   - `POST   /changesets`                     （config:write，title/reason 各 1–200，entries 1–200 条）
+ *   - `GET    /changesets?status=&page=&page_size=` （config:read，status 空 = 全部）
+ *   - `GET    /changesets/{id}`                （config:read，entries[].value 已遮罩 `••••••`）
+ *   - `POST   /changesets/{id}/publish`        （config:publish，仅 draft；非 draft → 400）
+ *   - `POST   /changesets/{id}/reject`         （config:write，仅 draft）
+ * 发布/拒绝都必须带 `reason`（1–200 字，写审计）。
+ */
+
+/** 变更单条目入参（与 `/import` 的 entries 同形；`validation` 可空）。 */
+export type ChangesetEntryInput = {
+  service_name: string;
+  key: string;
+  value: string;
+  value_type: string;
+  validation?: string;
+};
+
+/** 变更单条目（详情返回；`value` 已按读面规则遮罩，前端只做原样展示）。 */
+export type ChangesetEntry = ChangesetEntryInput;
+
+export type ChangesetStatus = 'draft' | 'published' | 'rejected';
+
+export type Changeset = {
+  id: string;
+  title: string;
+  reason: string;
+  status: ChangesetStatus;
+  entry_count: number;
+  created_by: string;
+  created_at: string;
+  published_by?: string;
+  published_at?: string | null;
+  rejected_by?: string;
+  rejected_at?: string | null;
+  reject_reason?: string;
+};
+
+export type ChangesetDetail = { changeset: Changeset; entries: ChangesetEntry[] };
+
+export type ListChangesetsResult = { items: Changeset[]; total: number; page: number; page_size: number };
+
+/** `/changesets` 的 query（`status` 空串由 `buildUrl` 剔除 = 不过滤）。 */
+export type ListChangesetsQuery = { status?: ChangesetStatus | ''; page?: number; page_size?: number };
+
+export function listChangesets(query: ListChangesetsQuery = {}): Promise<ListChangesetsResult> {
+  return request<ListChangesetsResult>('/changesets', {
+    query: { status: query.status, page: query.page, page_size: query.page_size },
+  });
+}
+
+export function getChangeset(id: string): Promise<ChangesetDetail> {
+  return request<ChangesetDetail>(`/changesets/${encodeURIComponent(id)}`);
+}
+
+/** 标题校验口径与 reason 一致（1–200 字，去两端空白）。 */
+function assertTitle(title: string): string {
+  const trimmed = (title ?? '').trim();
+  if (!trimmed) throw new ApiError(400, '请填写变更单标题（1–200 字）', 'invalid_param');
+  if (trimmed.length > 200) throw new ApiError(400, '变更单标题超长（≤200 字）', 'invalid_param');
+  return trimmed;
+}
+
+/** 创建变更单（草稿）。条目只发后端认识的字段，本地标记不随请求外泄。 */
+export function createChangeset(input: {
+  title: string;
+  reason: string;
+  entries: ChangesetEntryInput[];
+}): Promise<ChangesetDetail> {
+  return request<ChangesetDetail>('/changesets', {
+    method: 'POST',
+    body: {
+      title: assertTitle(input.title),
+      reason: assertReason(input.reason),
+      entries: (input.entries ?? []).map((e) => ({
+        service_name: e.service_name,
+        key: e.key,
+        value: e.value,
+        value_type: e.value_type,
+        validation: e.validation ?? '',
+      })),
+    },
+  });
+}
+
+export type PublishChangesetResult = { id: string; status: ChangesetStatus; applied: number; changed: number };
+
+/** 发布（需 config:publish）：把草稿条目逐条落库并把 `changeset_id` 写进版本流水。 */
+export function publishChangeset(id: string, input: { reason: string }): Promise<PublishChangesetResult> {
+  return request<PublishChangesetResult>(`/changesets/${encodeURIComponent(id)}/publish`, {
+    method: 'POST',
+    body: { reason: assertReason(input.reason) },
+  });
+}
+
+export type RejectChangesetResult = { id: string; status: ChangesetStatus };
+
+/** 拒绝（需 config:write）：仅 draft 可拒绝，写入 `reject_reason`。 */
+export function rejectChangeset(id: string, input: { reason: string }): Promise<RejectChangesetResult> {
+  return request<RejectChangesetResult>(`/changesets/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+    body: { reason: assertReason(input.reason) },
+  });
+}

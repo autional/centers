@@ -38,8 +38,8 @@ import type { Field, GroupEditor } from './lib/editors';
 import { API_BASE, AUTH_MODE, DATA_MODE, ENV_LABEL, isCallbackPath, OIDC, RUNTIME_MODE_LABEL, REQUIRE_AUTH } from './lib/config';
 import { completeLogin, restoreSession, signOut, startLogin } from './lib/auth';
 import type { Session } from './lib/auth';
-import { UNAUTHORIZED_EVENT, reveal as revealApi } from './lib/api';
-import type { ExportFormat, ImportPreviewResult, ImportPreviewRow } from './lib/api';
+import { UNAUTHORIZED_EVENT, createChangeset, reveal as revealApi } from './lib/api';
+import type { ChangesetDetail, ChangesetEntryInput, ExportFormat, ImportPreviewResult, ImportPreviewRow } from './lib/api';
 import { MASK_TEXT, RevealCache, isMasked, maskText, validateReason } from './lib/reveal';
 import { CURRENT_PORTAL_CODE, buildPortalUrl, fallbackPlatformUrl, fetchPortals, filterPortals, rootDomainOf } from './lib/portal';
 import type { PortalApplication } from './lib/portal';
@@ -47,7 +47,9 @@ import { EMPTY_META, errorStatus, errorText, store } from './lib/data';
 import type { ConsumersInfo, EffectiveRow, HistoryEntry, Meta } from './lib/data';
 import { downloadText, exportFilename, parseImportText, toImportEntries } from './lib/transfer';
 import type { ParsedImport } from './lib/transfer';
+import { isValidText, toChangesetEntries } from './lib/changesets';
 import ChangesPage from './pages/ChangesPage';
+import ChangesetsPage from './pages/ChangesetsPage';
 import './styles.css';
 
 const { Text } = Typography;
@@ -72,7 +74,7 @@ export function secretCenterUrl(key?: string): string {
   return key ? `${base}/#/secrets?key=${encodeURIComponent(key)}` : base;
 }
 
-type Route = { domain?: string; edit?: boolean; group?: string; changes?: boolean };
+type Route = { domain?: string; edit?: boolean; group?: string; changes?: boolean; changesets?: boolean };
 type ModalState = { mode: 'add' | 'edit'; item: Item; domain: string; group: string; scope: Scope; suggestedKey?: string };
 type Status = 'loading' | 'ready' | 'error' | 'forbidden' | 'unauthorized';
 type PendingWrite =
@@ -91,12 +93,15 @@ function parseHash(): Route {
   const p = raw.split('/').filter(Boolean).map(decodeURIComponent);
   // `#/changes`：跨服务的变更记录（只读）
   if (p[0] === 'changes') return { changes: true };
+  // `#/changesets`：变更单（草稿 → 发布/拒绝）
+  if (p[0] === 'changesets') return { changesets: true };
   if (p[0] !== 'd' || !p[1]) return {};
   return { domain: p[1], edit: p[2] === 'edit', group: p[3] };
 }
 
 function href(route: Route) {
   if (route.changes) return '#/changes';
+  if (route.changesets) return '#/changesets';
   if (!route.domain) return '#/';
   let s = `#/d/${encodeURIComponent(route.domain)}`;
   if (route.edit) s += '/edit';
@@ -348,7 +353,7 @@ function Console() {
           </Text>
         </div>
         <nav className="nav">
-          <a className={!route.domain && !route.changes ? 'on' : ''} href="#/">
+          <a className={!route.domain && !route.changes && !route.changesets ? 'on' : ''} href="#/">
             概览
           </a>
           <a className={route.domain ? 'on' : ''} href={href({ domain: meta.domains[0]?.name })}>
@@ -360,6 +365,9 @@ function Console() {
           </a>
           <a className={route.changes ? 'on' : ''} href="#/changes">
             变更记录
+          </a>
+          <a className={route.changesets ? 'on' : ''} href="#/changesets">
+            变更单
           </a>
         </nav>
         <div className="grow" />
@@ -428,6 +436,8 @@ function Console() {
           />
         ) : route.changes ? (
           <ChangesPage items={items} meta={meta} go={go} />
+        ) : route.changesets ? (
+          <ChangesetsPage />
         ) : items.length === 0 ? (
           <div className="page-state">
             <Empty description={store.localWrites ? '演示数据为空' : '该租户 / 应用下暂无配置项'} />
@@ -499,6 +509,11 @@ function Console() {
           onDone={async () => {
             setImportOpen(false);
             await load(true);
+          }}
+          onChangesetSaved={(detail) => {
+            setImportOpen(false);
+            message.success(`已存为草稿（变更单）${detail?.changeset?.title ? `：${detail.changeset.title}` : ''}`);
+            go({ changesets: true });
           }}
         />
       ) : null}
@@ -741,8 +756,11 @@ const IMPORT_ACTION_TAG: Record<ImportPreviewRow['action'], { color: string; lab
 /**
  * 导入向导：选择文件（YAML/JSON）→ 解析 → 差异预览 → 填原因 → 提交。
  * 差异以数据层为权威：api 模式调 `/import/preview`（只读不写库），mock 模式本地计算且**不提交**。
+ *
+ * 预览末尾另有次要出口「存为变更单」：把 create/update 条目存成**草稿**（不生效），
+ * 之后到 `#/changesets` 发布。它不改变「提交导入」的直写语义。
  */
-function ImportWizard(props: { onClose: () => void; onDone: () => Promise<void> }) {
+function ImportWizard(props: { onClose: () => void; onDone: () => Promise<void>; onChangesetSaved: (detail: ChangesetDetail) => void }) {
   const { message } = AntdApp.useApp();
   const [fileName, setFileName] = useState('');
   const [parsed, setParsed] = useState<ParsedImport | null>(null);
@@ -751,9 +769,13 @@ function ImportWizard(props: { onClose: () => void; onDone: () => Promise<void> 
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
 
   const trimmed = reason.trim();
   const canSubmit = !store.localWrites && !!preview?.writable && trimmed.length > 0 && trimmed.length <= 200;
+  /** 变更单条目：与「提交」同一批 create/update（顺序一致）。 */
+  const changesetEntries = useMemo(() => toChangesetEntries(preview?.items), [preview]);
+  const canSaveChangeset = changesetEntries.length > 0;
 
   const handleFile = async (file: File) => {
     setFileName(file.name);
@@ -802,6 +824,22 @@ function ImportWizard(props: { onClose: () => void; onDone: () => Promise<void> 
       footer={
         <Space>
           <Button onClick={props.onClose}>{store.localWrites ? '关闭' : '取消'}</Button>
+          <Tooltip
+            title={
+              store.localWrites
+                ? '演示模式不写后端，无法存为变更单（切换 VITE_DATA_MODE=api）'
+                : canSaveChangeset
+                  ? `把这 ${changesetEntries.length} 条存为草稿（不生效）`
+                  : '预览里没有可提交的条目（新增 / 修改）'
+            }
+          >
+            {/* 次要出口：只存草稿，不改「提交导入」的直写语义 */}
+            <span>
+              <Button disabled={!canSaveChangeset || store.localWrites} onClick={() => setSaveOpen(true)}>
+                存为变更单
+              </Button>
+            </span>
+          </Tooltip>
           {store.localWrites ? (
             <Button type="primary" disabled={!preview} onClick={props.onClose}>
               完成预览（演示不提交）
@@ -895,6 +933,87 @@ function ImportWizard(props: { onClose: () => void; onDone: () => Promise<void> 
           ) : null}
         </>
       ) : null}
+      {saveOpen ? (
+        <SaveChangesetModal
+          entries={changesetEntries}
+          defaultReason={trimmed}
+          onCancel={() => setSaveOpen(false)}
+          onSaved={(detail) => {
+            setSaveOpen(false);
+            props.onChangesetSaved(detail);
+          }}
+        />
+      ) : null}
+    </Modal>
+  );
+}
+
+/**
+ * 「存为变更单」小表单：标题 + 原因各必填 1–200，提交后建**草稿**（不生效）。
+ * 失败留在弹窗内显示错误（不关闭、不丢输入）。
+ */
+function SaveChangesetModal(props: {
+  entries: ChangesetEntryInput[];
+  defaultReason: string;
+  onCancel: () => void;
+  onSaved: (detail: ChangesetDetail) => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [reason, setReason] = useState(props.defaultReason.slice(0, 200));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const ok = isValidText(title) && isValidText(reason);
+
+  const submit = async () => {
+    if (!ok || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const detail = await createChangeset({ title: title.trim(), reason: reason.trim(), entries: props.entries });
+      props.onSaved(detail);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title="存为变更单（草稿）"
+      okText="存为草稿"
+      cancelText="取消"
+      okButtonProps={{ disabled: !ok, loading: busy }}
+      onCancel={props.onCancel}
+      onOk={() => void submit()}
+      destroyOnHidden
+    >
+      <Alert
+        className="banner"
+        type="info"
+        showIcon
+        message={`将写入 ${props.entries.length} 条条目为草稿：暂不生效，到「变更单」发布后才应用。`}
+      />
+      {error ? <Alert className="banner" type="error" showIcon message={error} /> : null}
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Input
+          maxLength={200}
+          showCount
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="变更单标题（必填 1–200 字）"
+        />
+        <Input.TextArea
+          rows={3}
+          maxLength={200}
+          showCount
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="变更原因（必填 1–200 字，进入审计与变更单详情）"
+        />
+      </Space>
     </Modal>
   );
 }
