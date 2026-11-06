@@ -424,3 +424,17 @@ code,
   min-width: 160px;
   line-height: 1.35;
 }
+
+/* --------------------- 查看明文（reveal，会话内只读展示） --------------------- */
+
+.reveal-plain {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.reveal-value {
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-width: 100%;
+}

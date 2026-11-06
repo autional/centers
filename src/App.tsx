@@ -38,8 +38,9 @@ import type { Field, GroupEditor } from './lib/editors';
 import { API_BASE, AUTH_MODE, DATA_MODE, ENV_LABEL, isCallbackPath, OIDC, RUNTIME_MODE_LABEL, REQUIRE_AUTH } from './lib/config';
 import { completeLogin, restoreSession, signOut, startLogin } from './lib/auth';
 import type { Session } from './lib/auth';
-import { UNAUTHORIZED_EVENT } from './lib/api';
+import { UNAUTHORIZED_EVENT, reveal as revealApi } from './lib/api';
 import type { ExportFormat, ImportPreviewResult, ImportPreviewRow } from './lib/api';
+import { MASK_TEXT, RevealCache, isMasked, maskText, validateReason } from './lib/reveal';
 import { CURRENT_PORTAL_CODE, buildPortalUrl, fallbackPlatformUrl, fetchPortals, filterPortals, rootDomainOf } from './lib/portal';
 import type { PortalApplication } from './lib/portal';
 import { EMPTY_META, errorStatus, errorText, store } from './lib/data';
@@ -105,8 +106,12 @@ function href(route: Route) {
 
 const TYPE_TAG: Record<ItemType, string> = { int: 'blue', bool: 'green', yaml: 'orange', scalar: 'default' };
 
-function valueText(v: string) {
-  return v === '••••••' ? '已脱敏' : v;
+/**
+ * 值展示：遮罩项统一显示 `已脱敏`（`masked` 标记优先，其次认占位字面量）。
+ * 明文只出现在「查看明文」成功后的会话内区域，不走本函数。
+ */
+function valueText(v: string, masked?: boolean) {
+  return maskText({ value: v, masked });
 }
 
 /** 登录态引导（进程内只跑一次）：StrictMode 二次挂载 / 热更新不会重复消费授权码。 */
@@ -250,6 +255,8 @@ function Console() {
       if (write.kind === 'upsert') await store.upsert(write.item, reason);
       else if (write.kind === 'delete') await store.remove(write.item, reason);
       else await store.rollback(write.item, write.revision, reason);
+      // 保存成功即作废该键的会话内明文（明文不随新值继续留在内存里）。
+      if (write.kind === 'upsert') RevealCache.clear({ service_name: write.item.s, key: write.item.k });
       message.success(
         write.kind === 'delete' ? '已删除（软删，版本保留）' : write.kind === 'rollback' ? '已回滚（生成新 revision）' : '已保存',
       );
@@ -688,7 +695,7 @@ function WriteDescription({ write }: { write: PendingWrite }) {
       </div>
       {write.kind === 'upsert' ? (
         <div>
-          <Text type="secondary">新值</Text> <span className="mono small">{valueText(it.v)}</span>
+          <Text type="secondary">新值</Text> <span className="mono small">{valueText(it.v, it.masked)}</span>
         </div>
       ) : null}
       {write.kind === 'rollback' ? (
@@ -1613,7 +1620,7 @@ function FieldRow(props: { field: Field; resolved: { it: Item; src: 'base' | 'ov
     <div className="field-row">
       <div className="field-label">{field.label}</div>
       <div className="field-key mono">{resolved?.it.k ?? field.keys[0]}</div>
-      <div className="field-value mono">{resolved ? valueText(resolved.it.v) : '未设置'}</div>
+      <div className="field-value mono">{resolved ? valueText(resolved.it.v, resolved.it.masked) : '未设置'}</div>
       <div className="field-src">
         {src === 'override' ? <Tag color="blue">服务覆盖</Tag> : src === 'inherit' ? <Tag>继承基座</Tag> : src === 'base' ? <Tag>基座默认</Tag> : <Tag color="orange">未设置</Tag>}
       </div>
@@ -1670,9 +1677,20 @@ function ItemModal(props: {
   const { state, onCancel, onSubmit } = props;
   const [form] = Form.useForm<Item>();
   const type = Form.useWatch('t', form) ?? state.item.t;
+  /**
+   * 遮罩关卡：值被后端遮罩且本次会话还没查看过明文时，禁止编辑（否则会把占位值写回后端）。
+   * 如果 `RevealCache` 里已有该键明文（刚在抽屉里查看过），则预填明文并允许编辑。
+   */
+  const cached = state.mode === 'edit' ? RevealCache.get(state.item.s, state.item.k) : undefined;
+  const masked = isMasked({ value: state.item.v, masked: state.item.masked });
+  const valueLocked = state.mode === 'edit' && masked && cached === undefined;
   useEffect(() => {
-    form.setFieldsValue({ ...state.item, k: state.item.k || state.suggestedKey || '' });
-  }, [form, state]);
+    form.setFieldsValue({
+      ...state.item,
+      k: state.item.k || state.suggestedKey || '',
+      v: cached ?? (valueLocked ? MASK_TEXT : state.item.v),
+    });
+  }, [form, state, cached, valueLocked]);
 
   return (
     <Modal
@@ -1680,6 +1698,7 @@ function ItemModal(props: {
       title={state.mode === 'add' ? '新增配置项' : '编辑配置项'}
       okText="保存"
       cancelText="取消"
+      okButtonProps={{ disabled: valueLocked }}
       onCancel={onCancel}
       onOk={() => form.submit()}
       destroyOnHidden
@@ -1695,6 +1714,8 @@ function ItemModal(props: {
             v: String(v.v ?? ''),
             d: state.domain,
             g: state.group,
+            // 提交的是用户可见/确认过的值，遮罩标记随之失效（保存成功后缓存也会被清掉）。
+            masked: false,
           };
           if (!it.k) return;
           onSubmit(it);
@@ -1717,8 +1738,19 @@ function ItemModal(props: {
           />
         </Form.Item>
         <Form.Item name="v" label="值">
-          {type === 'bool' ? <Switch /> : type === 'int' ? <InputNumber style={{ width: '100%' }} /> : <Input.TextArea rows={3} className="mono" />}
+          {type === 'bool' ? (
+            <Switch disabled={valueLocked} />
+          ) : type === 'int' ? (
+            <InputNumber style={{ width: '100%' }} disabled={valueLocked} />
+          ) : (
+            <Input.TextArea rows={3} className="mono" disabled={valueLocked} />
+          )}
         </Form.Item>
+        {valueLocked ? (
+          <Alert type="warning" showIcon message="请先在详情里查看明文后再编辑" />
+        ) : cached !== undefined && masked ? (
+          <Alert type="info" showIcon message="已填入本次会话查看的明文；保存后需重新查看。" />
+        ) : null}
         {state.mode === 'add' ? (
           <Alert type="info" showIcon message={`将写入：${scopeLabel(state.scope)} / ${state.group}`} />
         ) : null}
@@ -1748,6 +1780,13 @@ function PlacementDrawer(props: {
   // 消费方（影响面，CC-12）：哪些服务可能读取该键。mock 模式返回演示数据（source=demo）。
   const [consumers, setConsumers] = useState<ConsumersInfo | null>(null);
   const [consumersError, setConsumersError] = useState('');
+  /* 查看明文（reveal）：明文只进进程内缓存（RevealCache），关闭抽屉即清。 */
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
+  const [revealFor, setRevealFor] = useState<Item | null>(null);
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealError, setRevealError] = useState('');
+  /** mock 无后端：不提供「查看明文」，只显示脱敏文案。 */
+  const canReveal = store.mode === 'api';
 
   useEffect(() => {
     setHistId('');
@@ -1755,6 +1794,32 @@ function PlacementDrawer(props: {
     setHistError('');
     setHistItem(null);
   }, [state?.domain, state?.key]);
+
+  /** 换键 / 关闭抽屉 → 清掉该键所有作用域的会话内明文。 */
+  const openKey = state?.key ?? '';
+  useEffect(() => {
+    if (!openKey) return;
+    setRevealed({});
+    setRevealFor(null);
+    setRevealError('');
+    return () => RevealCache.clear({ key: openKey });
+  }, [openKey]);
+
+  const doReveal = async (it: Item, reason: string) => {
+    setRevealBusy(true);
+    setRevealError('');
+    try {
+      const res = await revealApi({ service_name: it.s || undefined, key: it.k, reason });
+      RevealCache.put(it.s, it.k, res.value);
+      setRevealed((prev) => ({ ...prev, [itemId(it.s, it.k)]: res.value }));
+      setRevealFor(null);
+    } catch (err) {
+      // 失败不清空已展示的明文；403 用专用文案（缺 config:write）。
+      setRevealError(errorStatus(err) === 403 ? '需要 config:write 才能查看明文' : errorText(err));
+    } finally {
+      setRevealBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!state) {
@@ -1815,13 +1880,28 @@ function PlacementDrawer(props: {
           <div className="placement-list">
             {list.map((it) => {
               const same = base && it.s ? it.v === base.v : false;
+              const id = itemId(it.s, it.k);
+              const plain = revealed[id] ?? RevealCache.get(it.s, it.k);
+              const masked = isMasked({ value: it.v, masked: it.masked });
               return (
-                <div key={itemId(it.s, it.k)} className="placement">
+                <div key={id} className="placement">
                   <div className="placement-head">
                     <b>{scopeLabel(it.s)}</b>
                     <Tag color={it.s ? (same ? 'default' : 'blue') : 'default'}>{it.s ? (same ? '与基座相同' : '覆盖基座') : '默认值'}</Tag>
                     <div className="grow" />
                     <Space size={2}>
+                      {canReveal && masked ? (
+                        <Button
+                          size="small"
+                          type="link"
+                          onClick={() => {
+                            setRevealError('');
+                            setRevealFor(it);
+                          }}
+                        >
+                          查看明文
+                        </Button>
+                      ) : null}
                       {historyFor ? (
                         <Button size="small" type="link" onClick={() => void openHistory(it)}>
                           历史
@@ -1837,7 +1917,16 @@ function PlacementDrawer(props: {
                       </Popconfirm>
                     </Space>
                   </div>
-                  <div className="mono small">{valueText(it.v)}</div>
+                  {plain !== undefined ? (
+                    <div className="reveal-plain">
+                      <Text code className="mono small reveal-value">
+                        {plain}
+                      </Text>
+                      <Tag color="gold">本次会话可见</Tag>
+                    </div>
+                  ) : (
+                    <div className="mono small">{valueText(it.v, it.masked)}</div>
+                  )}
                 </div>
               );
             })}
@@ -1909,8 +1998,71 @@ function PlacementDrawer(props: {
               )}
             </>
           ) : null}
+          {revealFor ? (
+            <RevealModal
+              item={revealFor}
+              busy={revealBusy}
+              error={revealError}
+              onCancel={() => {
+                setRevealFor(null);
+                setRevealError('');
+              }}
+              onConfirm={(reason) => void doReveal(revealFor, reason)}
+            />
+          ) : null}
         </>
       ) : null}
     </Drawer>
+  );
+}
+
+/**
+ * 「查看明文」原因弹窗：原因必填 1–200 字（与后端同口径）；明文/错误都只在会话内出现。
+ * 失败（含 403 缺 config:write）由父级传 `error` 进来，重试无需重开弹窗。
+ */
+function RevealModal(props: {
+  item: Item;
+  busy: boolean;
+  error: string;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const { item, busy, error, onCancel, onConfirm } = props;
+  const [reason, setReason] = useState('');
+  const check = validateReason(reason);
+  return (
+    <Modal
+      open
+      title="查看明文"
+      okText="查看"
+      cancelText="取消"
+      okButtonProps={{ disabled: !check.ok, loading: busy }}
+      onCancel={onCancel}
+      onOk={() => {
+        if (check.ok) onConfirm(check.value);
+      }}
+      destroyOnHidden
+    >
+      <div className="reason-desc">
+        <div>
+          <Text type="secondary">作用域</Text> {scopeLabel(item.s)}
+        </div>
+        <div>
+          <Text type="secondary">键</Text> <code className="mono">{item.k}</code>
+        </div>
+        <div className="hint">明文只在本次会话内存中展示（关闭抽屉即清除），每次查看都会写入审计。</div>
+      </div>
+      <Input.TextArea
+        rows={3}
+        maxLength={200}
+        showCount
+        autoFocus
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="例：排查 audit-service 401（签名校验失败）"
+      />
+      {!check.ok && check.value ? <div className="hint">{check.error}</div> : null}
+      {error ? <Alert type="error" showIcon message={error} /> : null}
+    </Modal>
   );
 }

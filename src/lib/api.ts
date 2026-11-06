@@ -178,6 +178,8 @@ export type ApiItem = {
   domain: string;
   /** 生效配置组 */
   group: string;
+  /** 敏感项遮罩标记（true 时 `value` 是占位 `••••••`，需 POST /reveal 才拿到明文）。 */
+  masked?: boolean;
 };
 
 export type ListItemsResult = { items: ApiItem[]; total: number; page: number; page_size: number };
@@ -196,6 +198,8 @@ export type EffectiveItem = {
   domain: string;
   group: string;
   sensitive: boolean;
+  /** 敏感项遮罩标记（true 时 `value` / `base_value` 是占位，需 POST /reveal）。 */
+  masked?: boolean;
 };
 
 export type EffectiveResult = { service_name: string; revision: number; items: EffectiveItem[] };
@@ -501,4 +505,40 @@ export type ConsumersResult = {
 
 export function consumers(key: string): Promise<ConsumersResult> {
   return request('/consumers', { query: { key } });
+}
+
+/* ------------------------------- 查看明文（reveal） ------------------------------- */
+
+/**
+ * 查看明文入参：`service_name` 省略 / 空串 = 平台基座作用域，`key` 必填，
+ * `reason` 必填 1–200 字（后端每次查看都写审计，前端只做同名归一校验）。
+ */
+export type RevealInput = { service_name?: string; key: string; reason: string };
+
+/** 查看明文结果：`source=inherit` 表示该键在目标服务下继承自基座。 */
+export type RevealResult = {
+  service_name: string;
+  key: string;
+  value: string;
+  value_type: string;
+  revision: number;
+  source: 'exact' | 'inherit';
+  masked: boolean;
+};
+
+/**
+ * 查看单个敏感项的明文（`POST /reveal`，需 `config:write`；无权限 → 403）。
+ *
+ * 明文**不得**持久化：调用方只允许放进内存缓存（`lib/reveal.ts` 的 `RevealCache`），
+ * 关闭抽屉 / 保存成功后立即清除。
+ */
+export function reveal(input: RevealInput): Promise<RevealResult> {
+  return request<RevealResult>('/reveal', {
+    method: 'POST',
+    body: {
+      service_name: input.service_name || '',
+      key: input.key,
+      reason: assertReason(input.reason),
+    },
+  });
 }

@@ -15,6 +15,11 @@ export type Item = {
   d: string;
   /** 配置组 */
   g: string;
+  /**
+   * 敏感项遮罩标记（api 模式由后端 `/items`、`/effective` 带回）。
+   * true 表示 `v` 是占位 `••••••`，真实值需通过「查看明文」按需获取。
+   */
+  masked?: boolean;
 };
 
 export type Scope = '' | string;

@@ -38,6 +38,7 @@ function toItem(row: api.ApiItem): Item {
     v: row.value ?? '',
     d: row.domain || FALLBACK_DOMAIN,
     g: row.group || row.group_name || FALLBACK_GROUP,
+    masked: row.masked === true,
   };
 }
 
@@ -50,6 +51,7 @@ function toEffectiveRow(row: api.EffectiveItem, scope: string): EffectiveRow {
     d: row.domain || FALLBACK_DOMAIN,
     g: row.group || FALLBACK_GROUP,
     src: row.source,
+    masked: row.masked === true,
   };
 }
 
