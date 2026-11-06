@@ -1,7 +1,7 @@
 # 配置中心控制台（Config Console）
 
 **仓库**：<https://github.com/autional/config>
-**预览**：<https://config.autional.com>
+**域名**：[config.autional.cn](https://config.autional.cn)（已接入）· config.autional.com（待 GoDaddy CNAME）
 
 
 配置中心的**可编辑后台**原型。技术栈：Vite + React 19 + Ant Design 6 + TypeScript。
@@ -22,7 +22,7 @@
 ## 部署
 
 `main` 推送 → Vercel 自动部署（项目 `config`）。
-生产地址：<https://config.autional.com>
+生产地址：<https://config.autional.cn>
 
 ## 运行
 
