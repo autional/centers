@@ -20,6 +20,17 @@
 - 组内未被定制表单覆盖的项，自动落入「其他项（默认表单）」，不丢项。
 - 作用域：平台基座 / 某个服务。服务未定义 → 继承基座；定义 → 覆盖。
 
+### 顶栏「门户」切换（2026-11-06）
+
+- 目录**来自平台**（不维护站点域名表）：`GET /bff/tenant/api/v1/admin/tenants/{tenantId}/applications?type=portal&is_platform=true&status=active`
+  （实现 `src/lib/portal.ts`，纯函数单测 `portal.test.ts`）。
+- 租户：会话 JWT `tenantId` → `VITE_TENANT_ID` → 平台常量 `01KSQCBNVMS6SX64PJS937CE33`。
+- 过滤：排除 `auth`/`landing`/`authenticator`；`platform` 仅平台租户；`admin`/`security` 仅管理面角色
+  （`super_admin|admin|security_admin|user_manager`；令牌未带 roles 时不过滤，避免误伤）。
+- URL：`${protocol}//${config.portal.host || code}.${根域}${config.portal.base}`；根域由当前 hostname 去掉首段子域得到。
+- **降级是正常路径**（403/401/超时/只剩自己）：单条「平台控制台」（`.cn` → `platform.autional.cn`，否则 `.com`），
+  Tooltip 注明「门户目录不可用」，不弹错、不阻塞主内容。
+
 ## 部署
 
 `main` 推送 → Vercel 自动部署（项目 `config`）。
@@ -47,13 +58,16 @@ npm run test:watch
   非法条目（键/类型/值）判 invalid、`diffEntries` 计数（create/update/unchanged/invalid/skipped）。
 - `model.ts`：域/组统计与未知域回退（`DOMAIN_META` 缺省）、`effective` 生效语义（base/override，
   inherit 由 API 侧映射）、`aggregate` 按 key 去重与 N 种取值（distinct，遮罩值不计入）+ 过滤/排序。
+- `api.ts`：`listAllItems` 并发翻页（页数按第 1 页 `total` 推导、并发度 ≤ 4、跨页按 id 去重且顺序稳定、
+  任一页失败整体 reject）；`fetch` 全程 mock，不连网。
+- `config.ts`：`envLabelOf` 三类 hostname（本地 / 生产 / 其它取首段）与 `VITE_ENV_LABEL` 覆盖优先级。
 
 配置在 `vitest.config.ts`（`environment: 'node'`，`include: ['src/**/*.test.ts']`）。
 
 
 ## 演示数据（默认）
 
-`src/data/inventory.json`：来自配置中心真实预检（2,020 个唯一键、69 个配置组、27 个服务），
+`src/data/inventory.json`：来自配置中心真实预检（**2,025 个唯一键、70 个配置组、28 个服务**；口径以线上为准），
 **值已脱敏**（敏感/主机/库名等替换为 `••••••`）。编辑只写入浏览器 localStorage，可「重置」恢复。
 
 默认构建（不设任何 `VITE_*`）就是这一形态：**公开演示，无需后端、无需登录**。
@@ -70,6 +84,7 @@ npm run test:watch
 | `VITE_TENANT_ID` | 空 | 租户兜底（JWT 已带 `tenant_id` 时以令牌为准） |
 | `VITE_APP_ID` | 空 | 应用兜底（空 = 平台应用） |
 | `VITE_REQUIRE_AUTH` | 空 | `1` = 未登录先进登录页；默认放开（mock 演示可直接看） |
+| `VITE_ENV_LABEL` | 空 | 顶栏环境标签覆盖；空 = 按 hostname 推导（`localhost`/`127.0.0.1`/`*.local` → 本地，`config.autional.com`·`.cn` → 生产，其它取首段） |
 | `VITE_OIDC_AUTHORIZE` | `https://auth.autional.com/oauth/api/v1/oauth/authorize` | 授权端点（浏览器跳转） |
 | `VITE_OIDC_TOKEN` | `https://api.autional.com/bff/oauth/api/v1/oauth/token` | 令牌端点（换票/刷新）；**生产部署用同源 `/bff/oauth/api/v1/oauth/token`**，由 `vercel.ts` 代理，避免 CORS |
 | `VITE_OIDC_CLIENT_ID` | 空 | OAuth 客户端 ID（公开客户端，`is_confidential=false`）。当前环境用 `01AR0000000000000000000008`（Platform Console OAuth Client，已登记 config com/cn 回调） |
@@ -129,7 +144,7 @@ VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
   `https://api.autional.cn`（com 为 `https://api.autional.com`），不是 `identity-service`。
 - 平台管理员的 JWT 租户是 `platform`，但配置基座是全局 `tenant_id=''`、`app_id=''`；
   后端已把平台管理员归一到基座，前端无需传空参数。
-- 首屏会拉全量（2,025 条 ÷ 100/页 ≈ 21 次请求），“正在加载配置…”持续几秒是正常的。
+- 首屏会拉全量（2,025 条 ÷ 100/页 ≈ 21 页）：第 1 页先取拿 `total`，其余页 4 路并发，约 6 个来回。
 - 常见错误与处理：
   - `401 invalid token`：后端 RS256 公钥/iss/aud 没对齐（先查 config-service，不是前端 token 丢了）。
   - `403 entry_plane_forbidden`：OAuth 的 config 门户未映射 `admin` 平面，需重新登录拿新 token。
@@ -158,6 +173,10 @@ VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
 
 ## 已定制的组
 
+服务端已 **seed 51 组**编辑器 schema（`shared/service-config/internal/editorsseed/seed.json`，
+启动期幂等写入 `config_editors`）。下表只列**最常见的 5 组**，完整清单见该 seed 文件；
+未 seed 的组回落本地注册表 `src/lib/editors.ts` 或默认表单。
+
 | 域 | 组 |
 |---|---|
 | 数据库 | PostgreSQL |
@@ -165,6 +184,8 @@ VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
 | 邮件与短信 | 邮件发送 |
 | 邮件与短信 | 短信与推送 |
 | 限流与配额 | 接口限流 |
+
+> 「限流与配额|接口限流」走**限流规则专用表**（由共享 ratelimit 生效），不在上述 51 组 seed 内。
 
 其余组走默认表单。
 

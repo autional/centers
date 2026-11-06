@@ -41,12 +41,48 @@ export const APP_ID = str('VITE_APP_ID');
 /** 1 = 未登录不得进入控制台（默认 0：mock 演示可直接看）。 */
 export const REQUIRE_AUTH = str('VITE_REQUIRE_AUTH') === '1';
 
+/** 当前页面 origin；非浏览器环境（node 单测 / SSR）返回空串，避免模块初始化就抛。 */
+function origin(): string {
+  return typeof window === 'undefined' ? '' : window.location?.origin ?? '';
+}
+
+/** 当前 hostname；非浏览器环境返回空串。 */
+function hostname(): string {
+  return typeof window === 'undefined' ? '' : window.location?.hostname ?? '';
+}
+
+/**
+ * 由 hostname 推导顶栏环境标签（纯函数，便于单测）：
+ *   - `localhost` / `127.0.0.1` / `*.local` → 本地
+ *   - `config.autional.com` / `config.autional.cn` → 生产
+ *   - 其它 → hostname 首段（如 `preview` → `preview`）；空 hostname → 空串
+ */
+export function envLabelOf(rawHostname: string): string {
+  const raw = String(rawHostname ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, ''); // 去掉 IPv6 方括号
+  if (raw === '') return '';
+  if (raw === '::1') return '本地';
+  const host = raw.replace(/:\d+$/, '').replace(/\.$/, ''); // 去掉端口 / FQDN 尾点
+  if (host === '') return '';
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) return '本地';
+  if (host === 'config.autional.com' || host === 'config.autional.cn') return '生产';
+  return host.split('.')[0] ?? host;
+}
+
+/**
+ * 顶栏展示的环境标签。`VITE_ENV_LABEL` 非空优先（如预发环境显式标注），
+ * 否则按 hostname 推导；两者都取不到时回落「生产」（浏览器里 hostname 恒非空）。
+ */
+export const ENV_LABEL = str('VITE_ENV_LABEL') || envLabelOf(hostname()) || '生产';
+
 /** OIDC 授权码 + PKCE 参数。 */
 export const OIDC = {
   authorizeUrl: str('VITE_OIDC_AUTHORIZE', 'https://auth.autional.com/oauth/api/v1/oauth/authorize'),
   tokenUrl: str('VITE_OIDC_TOKEN', 'https://api.autional.com/bff/oauth/api/v1/oauth/token'),
   clientId: str('VITE_OIDC_CLIENT_ID'),
-  redirectUri: str('VITE_OIDC_REDIRECT_URI', `${window.location.origin}/oauth/callback`),
+  redirectUri: str('VITE_OIDC_REDIRECT_URI', `${origin()}/oauth/callback`),
   scope: str('VITE_OIDC_SCOPE', 'openid profile email'),
 } as const;
 

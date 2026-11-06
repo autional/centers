@@ -35,20 +35,23 @@ import { DOMAIN_META, aggregate, groupEffective, isRule, itemId, scopeLabel, ser
 import type { Item, ItemType, Scope } from './lib/model';
 import { RATE_LIMIT_GROUP, editorOf } from './lib/editors';
 import type { Field, GroupEditor } from './lib/editors';
-import { API_BASE, AUTH_MODE, DATA_MODE, isCallbackPath, OIDC, RUNTIME_MODE_LABEL, REQUIRE_AUTH } from './lib/config';
+import { API_BASE, AUTH_MODE, DATA_MODE, ENV_LABEL, isCallbackPath, OIDC, RUNTIME_MODE_LABEL, REQUIRE_AUTH } from './lib/config';
 import { completeLogin, restoreSession, signOut, startLogin } from './lib/auth';
 import type { Session } from './lib/auth';
 import { UNAUTHORIZED_EVENT } from './lib/api';
 import type { ExportFormat, ImportPreviewResult, ImportPreviewRow } from './lib/api';
+import { CURRENT_PORTAL_CODE, buildPortalUrl, fallbackPlatformUrl, fetchPortals, filterPortals, rootDomainOf } from './lib/portal';
+import type { PortalApplication } from './lib/portal';
 import { EMPTY_META, errorStatus, errorText, store } from './lib/data';
 import type { ConsumersInfo, EffectiveRow, HistoryEntry, Meta } from './lib/data';
 import { downloadText, exportFilename, parseImportText, toImportEntries } from './lib/transfer';
 import type { ParsedImport } from './lib/transfer';
+import ChangesPage from './pages/ChangesPage';
 import './styles.css';
 
 const { Text } = Typography;
 
-type Route = { domain?: string; edit?: boolean; group?: string };
+type Route = { domain?: string; edit?: boolean; group?: string; changes?: boolean };
 type ModalState = { mode: 'add' | 'edit'; item: Item; domain: string; group: string; scope: Scope; suggestedKey?: string };
 type Status = 'loading' | 'ready' | 'error' | 'forbidden' | 'unauthorized';
 type PendingWrite =
@@ -65,11 +68,14 @@ const WRITE_TITLE: Record<PendingWrite['kind'], string> = {
 function parseHash(): Route {
   const raw = window.location.hash.replace(/^#\/?/, '');
   const p = raw.split('/').filter(Boolean).map(decodeURIComponent);
+  // `#/changes`：跨服务的变更记录（只读）
+  if (p[0] === 'changes') return { changes: true };
   if (p[0] !== 'd' || !p[1]) return {};
   return { domain: p[1], edit: p[2] === 'edit', group: p[3] };
 }
 
 function href(route: Route) {
+  if (route.changes) return '#/changes';
   if (!route.domain) return '#/';
   let s = `#/d/${encodeURIComponent(route.domain)}`;
   if (route.edit) s += '/edit';
@@ -315,24 +321,31 @@ function Console() {
           </Text>
         </div>
         <nav className="nav">
-          <a className={!route.domain ? 'on' : ''} href="#/">
+          <a className={!route.domain && !route.changes ? 'on' : ''} href="#/">
             概览
           </a>
           <a className={route.domain ? 'on' : ''} href={href({ domain: meta.domains[0]?.name })}>
             配置域
           </a>
+          {/* 密钥中心由独立门户/另一 session 负责；本仓保持占位，不接未上线的地址 */}
           <span className="nav-disabled">密钥中心</span>
-          <span className="nav-disabled">变更记录</span>
+          <a className={route.changes ? 'on' : ''} href="#/changes">
+            变更记录
+          </a>
         </nav>
         <div className="grow" />
         <Space size={8}>
-          <Tag color="green">实例 prod</Tag>
+          {/* 环境标签按 hostname / VITE_ENV_LABEL 推导，com·cn 显示「生产」，本地显示「本地」 */}
+          <Tooltip title="当前部署环境">
+            <Tag color="green">{ENV_LABEL}</Tag>
+          </Tooltip>
           {store.localWrites ? <Tag>演示 · 本地可编辑</Tag> : <Tag color="blue">{RUNTIME_MODE_LABEL}</Tag>}
           {store.canReset ? (
             <Popconfirm title="恢复演示数据？" description="会清空本机改动。" onConfirm={() => void resetDemo()}>
               <Button size="small">重置</Button>
             </Popconfirm>
           ) : null}
+          <PortalMenu session={session} />
           {session ? (
             <Dropdown
               trigger={['click']}
@@ -384,6 +397,8 @@ function Console() {
               </Space>
             }
           />
+        ) : route.changes ? (
+          <ChangesPage items={items} meta={meta} go={go} />
         ) : items.length === 0 ? (
           <div className="page-state">
             <Empty description={store.localWrites ? '演示数据为空' : '该租户 / 应用下暂无配置项'} />
@@ -459,6 +474,114 @@ function Console() {
         />
       ) : null}
     </Layout>
+  );
+}
+
+/* ------------------------------ 门户切换（顶栏） ------------------------------ */
+
+type PortalMenuState = {
+  status: 'loading' | 'ready' | 'degraded';
+  /** 目录中的可见门户（含当前 config，用标记区分；不含已排除的 auth/landing/authenticator） */
+  portals: PortalApplication[];
+};
+
+/**
+ * 顶栏「门户」切换：目录来自平台（`/bff/tenant/.../applications`，见 lib/portal.ts）。
+ *
+ * 降级是正常路径（平台租户打该端点 403 / 未登录 401 / 超时）：
+ * 单条「平台控制台」+ Tooltip 说明，不弹错、不打扰已登录用户。
+ * 首次渲染不阻塞主内容：按钮 loading/disabled，拿到结果再启用。
+ */
+function PortalMenu({ session }: { session: Session | null }) {
+  const [state, setState] = useState<PortalMenuState>({ status: 'loading', portals: [] });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let alive = true;
+    const token = session?.accessToken ?? '';
+
+    // 无令牌（mock 演示 / 已退出）时管理面端点必然 401：直接降级，省一次注定失败的请求。
+    if (!token) {
+      setState({ status: 'degraded', portals: [] });
+      return () => controller.abort();
+    }
+
+    setState({ status: 'loading', portals: [] });
+    void (async () => {
+      try {
+        const rows = await fetchPortals({
+          tenantId: session?.user.tenantId,
+          accessToken: token,
+          signal: controller.signal,
+        });
+        if (!alive) return;
+        const visible = filterPortals(rows, { tenantId: session?.user.tenantId, roles: session?.user.roles }).sort(
+          (a, b) => (a.order ?? 0) - (b.order ?? 0),
+        );
+        // 「只剩当前项」与「目录不可用」同样降级：顶栏必须始终有可跳的出口。
+        const hasOther = visible.some((p) => p.code !== CURRENT_PORTAL_CODE);
+        setState(hasOther ? { status: 'ready', portals: visible } : { status: 'degraded', portals: [] });
+      } catch {
+        if (alive) setState({ status: 'degraded', portals: [] });
+      }
+    })();
+
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [session]);
+
+  const loading = state.status === 'loading';
+  const degraded = state.status === 'degraded';
+  const hostname = window.location.hostname;
+  const rootDomain = rootDomainOf(hostname);
+
+  const labelOf = (p: PortalApplication) => (
+    <div className="portal-item">
+      <span>
+        {p.name || p.code}
+        {p.code === CURRENT_PORTAL_CODE ? (
+          <Tag color="blue" className="portal-current">
+            当前
+          </Tag>
+        ) : null}
+      </span>
+      {p.description ? <span className="hint">{p.description}</span> : null}
+    </div>
+  );
+
+  const items: MenuProps['items'] = degraded
+    ? [{ key: 'fallback:platform', label: '平台控制台' }]
+    : state.portals.map((p) => ({
+        key: p.code,
+        disabled: p.code === CURRENT_PORTAL_CODE,
+        label: labelOf(p),
+      }));
+
+  const openPortal = (key: string) => {
+    if (degraded) {
+      window.location.assign(fallbackPlatformUrl(hostname));
+      return;
+    }
+    const entry = state.portals.find((p) => p.code === key);
+    if (!entry || entry.code === CURRENT_PORTAL_CODE) return;
+    const url = buildPortalUrl(entry, rootDomain, window.location.protocol);
+    if (url) window.location.assign(url);
+  };
+
+  return (
+    <Tooltip title={degraded ? '门户目录不可用（已降级到平台控制台）' : '切换门户'}>
+      <Dropdown
+        trigger={['click']}
+        disabled={loading}
+        menu={{ items, onClick: ({ key }) => openPortal(key), style: { minWidth: 220 } }}
+      >
+        <Button size="small" loading={loading}>
+          门户
+        </Button>
+      </Dropdown>
+    </Tooltip>
   );
 }
 

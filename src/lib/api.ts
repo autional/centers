@@ -259,13 +259,43 @@ export function listItems(query: ListItemsQuery = {}): Promise<ListItemsResult> 
 
 /**
  * 拉全量条目（管理面按页返回，页大小上限由共享 dto 归一为 100）。
- * 管理面一次需要「跨服务 + 基座」全量才能构建域/组树，故这里顺序翻页。
+ * 管理面一次需要「跨服务 + 基座」全量才能构建域/组树。
+ *
+ * 并发策略：**第 1 页先取**拿到 `total`，由此推导总页数 `ceil(total / pageSize)`（受 `maxPages` 限制），
+ * 其余页用固定并发池拉取（上限 {@link LIST_CONCURRENCY}）。语义与顺序翻页保持一致：
+ * 按 `id || service|key` 去重、结果顺序 = 页序 + 页内序、任一路径失败整体 reject。
+ * （实测 2,025 条约 21 页：由「21 次串行」降为「1 + 20 并发」≈ 6 个来回。）
  */
 export async function listAllItems(pageSize = 100, maxPages = 200): Promise<ApiItem[]> {
+  if (maxPages <= 0) return [];
+
+  const first = await listItems({ page: 1, page_size: pageSize });
+  const pages: ListItemsResult[] = [first];
+
+  const total = typeof first.total === 'number' && Number.isFinite(first.total) ? first.total : null;
+  const firstCount = (first.items ?? []).length;
+  // 页数：第 1 页就不满一页 → 只有 1 页（与顺序翻页的「提前结束」等价）；
+  // total 缺失 → 退化为顺序翻页（null）；否则 ceil(total/pageSize)，受 maxPages 限制。
+  let knownPages: number | null;
+  if (firstCount < pageSize) knownPages = 1;
+  else if (total === null) knownPages = null;
+  else knownPages = Math.min(maxPages, Math.max(1, Math.ceil(total / Math.max(1, pageSize))));
+
+  if (knownPages === null) {
+    // 后端未回 total（理论不会发生）：退化为顺序翻页，保持原语义不变。
+    for (let page = 2; page <= maxPages; page += 1) {
+      const res = await listItems({ page, page_size: pageSize });
+      pages.push(res);
+      if ((res.items ?? []).length < pageSize) break;
+    }
+  } else {
+    const rest = Array.from({ length: knownPages - 1 }, (_, i) => i + 2);
+    pages.push(...(await poolMap(rest, LIST_CONCURRENCY, (page) => listItems({ page, page_size: pageSize }))));
+  }
+
   const out: ApiItem[] = [];
   const seen = new Set<string>();
-  for (let page = 1; page <= maxPages; page += 1) {
-    const res = await listItems({ page, page_size: pageSize });
+  for (const res of pages) {
     const batch = res.items ?? [];
     for (const row of batch) {
       const id = row.id || `${row.service_name}|${row.key}`;
@@ -277,6 +307,25 @@ export async function listAllItems(pageSize = 100, maxPages = 200): Promise<ApiI
     if (typeof res.total === 'number' && out.length >= res.total) break;
   }
   return out;
+}
+
+/** 全量翻页的并发上限（逐页请求较贵，4 路足够把 21 页压到 6 个来回且不打爆网关）。 */
+const LIST_CONCURRENCY = 4;
+
+/** 固定并发度的 map：保持结果下标与输入一致；任一任务失败整体 reject。 */
+async function poolMap<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      results[index] = await task(items[index] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 export function getItem(serviceName: string, key: string): Promise<GetItemResult> {
@@ -296,6 +345,29 @@ export function groups(): Promise<GroupsResult> {
 
 export function history(query: { service_name?: string; key: string; page?: number; page_size?: number }): Promise<HistoryResult> {
   return request<HistoryResult>('/history', { query: { page: 1, page_size: 20, ...query } });
+}
+
+/**
+ * 变更记录（跨键、跨服务，`GET /changes`，需 config:read）。
+ *
+ * 排序由服务端保证 `created_at DESC, id DESC`；`from` / `to` 为 RFC3339 串
+ * （`+08:00` 这类偏移由 `URLSearchParams` 编码，调用方不必手写 encodeURIComponent）。
+ * 空值（`''` / `null` / `undefined`）由 `buildUrl` 自动剔除 = 不过滤。
+ */
+export type ChangesQuery = {
+  service_name?: string;
+  domain?: string;
+  group?: string;
+  key_prefix?: string;
+  created_by?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  page_size?: number;
+};
+
+export function changes(query: ChangesQuery = {}): Promise<HistoryResult> {
+  return request<HistoryResult>('/changes', { query: { page: 1, page_size: 50, ...query } });
 }
 
 /** 读组编辑器 schema；不存在时后端 404（调用方用默认表单）。 */
