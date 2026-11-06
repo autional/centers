@@ -354,3 +354,41 @@ code,
   word-break: break-all;
   line-height: 1.45;
 }
+
+/* ---------------------- 登录 / 加载 / 写操作原因 ---------------------- */
+
+.boot {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #f6f7f9;
+}
+.login-card {
+  width: 440px;
+  max-width: calc(100vw - 32px);
+}
+.login-card .brand {
+  margin-bottom: 14px;
+}
+.page-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 0;
+}
+.reason-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.user-who {
+  min-width: 160px;
+  line-height: 1.35;
+}

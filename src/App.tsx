@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Alert,
   App as AntdApp,
-  Badge,
   Breadcrumb,
   Button,
   Card,
   Col,
   Drawer,
+  Dropdown,
   Empty,
   Form,
   Input,
@@ -15,10 +16,12 @@ import {
   Layout,
   Modal,
   Popconfirm,
+  Result,
   Row,
   Segmented,
   Select,
   Space,
+  Spin,
   Statistic,
   Switch,
   Table,
@@ -26,32 +29,34 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import type { TableProps } from 'antd';
-import {
-  DOMAIN_META,
-  aggregate,
-  applyOverrides,
-  buildMeta,
-  clearOverrides,
-  effective,
-  groupEffective,
-  isRule,
-  itemId,
-  loadOverrides,
-  saveOverrides,
-  scopeLabel,
-  servicesInGroup,
-} from './lib/model';
+import type { MenuProps, TableProps } from 'antd';
+import { DOMAIN_META, aggregate, groupEffective, isRule, itemId, scopeLabel, servicesInGroup } from './lib/model';
 import type { Item, ItemType, Scope } from './lib/model';
 import { RATE_LIMIT_GROUP, editorOf } from './lib/editors';
-import type { Field } from './lib/editors';
+import type { Field, GroupEditor } from './lib/editors';
+import { API_BASE, AUTH_MODE, DATA_MODE, isCallbackPath, OIDC, RUNTIME_MODE_LABEL, REQUIRE_AUTH } from './lib/config';
+import { completeLogin, restoreSession, signOut, startLogin } from './lib/auth';
+import type { Session } from './lib/auth';
+import { UNAUTHORIZED_EVENT } from './lib/api';
+import { EMPTY_META, errorStatus, errorText, store } from './lib/data';
+import type { EffectiveRow, HistoryEntry, Meta } from './lib/data';
 import './styles.css';
 
 const { Text } = Typography;
 
-type Overrides = ReturnType<typeof loadOverrides>;
 type Route = { domain?: string; edit?: boolean; group?: string };
 type ModalState = { mode: 'add' | 'edit'; item: Item; domain: string; group: string; scope: Scope; suggestedKey?: string };
+type Status = 'loading' | 'ready' | 'error' | 'forbidden' | 'unauthorized';
+type PendingWrite =
+  | { kind: 'upsert'; item: Item }
+  | { kind: 'delete'; item: Item }
+  | { kind: 'rollback'; item: Item; revision: number };
+
+const WRITE_TITLE: Record<PendingWrite['kind'], string> = {
+  upsert: '保存配置项',
+  delete: '删除配置项',
+  rollback: '回滚配置项',
+};
 
 function parseHash(): Route {
   const raw = window.location.hash.replace(/^#\/?/, '');
@@ -74,13 +79,106 @@ function valueText(v: string) {
   return v === '••••••' ? '已脱敏' : v;
 }
 
+/** 登录态引导（进程内只跑一次）：StrictMode 二次挂载 / 热更新不会重复消费授权码。 */
+type BootResult = { session: Session | null; error: string };
+let authBoot: Promise<BootResult> | null = null;
+
+function bootstrapAuth(): Promise<BootResult> {
+  if (authBoot) return authBoot;
+  authBoot = (async (): Promise<BootResult> => {
+    try {
+      // OIDC 回调页：用 code + PKCE 换票，然后清掉 URL 上的 code/state（避免刷新重放授权码）。
+      if (AUTH_MODE === 'oidc' && isCallbackPath()) {
+        const session = await completeLogin();
+        window.history.replaceState(null, '', `/${window.location.hash || ''}`);
+        return { session, error: '' };
+      }
+      return { session: await restoreSession(), error: '' };
+    } catch (err) {
+      return { session: null, error: errorText(err) };
+    }
+  })();
+  return authBoot;
+}
+
+/** 顶层只负责挂 antd 的 App 上下文，业务状态在 Console（这样 Console 内可用 useApp 的 message）。 */
 export default function Root() {
-  const [overrides, setOverrides] = useState<Overrides>(() => loadOverrides());
-  const items = useMemo(() => applyOverrides(overrides), [overrides]);
-  const meta = useMemo(() => buildMeta(items), [items]);
+  return (
+    <AntdApp>
+      <Console />
+    </AntdApp>
+  );
+}
+
+function Console() {
+  const { message } = AntdApp.useApp();
+  const [authReady, setAuthReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authError, setAuthError] = useState('');
+  const [status, setStatus] = useState<Status>('loading');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [items, setItems] = useState<Item[]>([]);
+  const [meta, setMeta] = useState<Meta>(EMPTY_META);
   const [route, setRoute] = useState<Route>(() => parseHash());
-  const [modal, setModal] = useState<{ mode: 'add' | 'edit'; item: Item; domain: string; group: string; scope: Scope; suggestedKey?: string } | null>(null);
+  const [modal, setModal] = useState<ModalState | null>(null);
   const [viewing, setViewing] = useState<{ domain: string; key: string } | null>(null);
+  const [pending, setPending] = useState<PendingWrite | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const needsLogin = !session && (REQUIRE_AUTH || DATA_MODE === 'api');
+
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setStatus('loading');
+      try {
+        const snapshot = await store.load();
+        setItems(snapshot.items);
+        setMeta(snapshot.meta);
+        setErrorMessage('');
+        setStatus('ready');
+      } catch (err) {
+        const code = errorStatus(err);
+        setErrorMessage(errorText(err));
+        setStatus(code === 401 ? 'unauthorized' : code === 403 ? 'forbidden' : 'error');
+        if (silent) message.error(errorText(err));
+      }
+    },
+    [message],
+  );
+
+  /* 登录态：处理 OIDC 回调（换票）或恢复已有会话。 */
+  useEffect(() => {
+    let alive = true;
+    void bootstrapAuth().then((result) => {
+      if (!alive) return;
+      setAuthError(result.error);
+      setSession(result.session);
+      setAuthReady(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /* 令牌失效（401）→ 清会话、回登录态。 */
+  useEffect(() => {
+    const onUnauthorized = () => {
+      void signOut().then(() => setSession(null));
+      setStatus('unauthorized');
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, []);
+
+  /* 数据加载：api 模式必须已登录（管理面需要 JWT）；mock 模式无条件加载，保证公开演示可用。 */
+  useEffect(() => {
+    if (!authReady) return;
+    if (DATA_MODE === 'api' && !session) {
+      setStatus('unauthorized');
+      return;
+    }
+    void load();
+  }, [authReady, session, load]);
 
   useEffect(() => {
     const onHash = () => setRoute(parseHash());
@@ -94,106 +192,222 @@ export default function Root() {
     window.scrollTo({ top: 0 });
   };
 
-  const persist = (next: Overrides) => {
-    saveOverrides(next);
-    setOverrides(next);
+  const login = async () => {
+    setAuthError('');
+    try {
+      const next = await startLogin();
+      if (next) {
+        setSession(next);
+        setStatus('loading');
+      }
+    } catch (err) {
+      setAuthError(errorText(err));
+    }
   };
 
-  const upsert = (it: Item) => {
-    const next: Overrides = {
-      upsert: { ...overrides.upsert, [itemId(it.s, it.k)]: it },
-      deleted: overrides.deleted.filter((x) => x !== itemId(it.s, it.k)),
-    };
-    persist(next);
+  const logout = async () => {
+    await signOut();
+    setSession(null);
+    setItems([]);
+    setMeta(EMPTY_META);
+    setStatus('unauthorized');
   };
 
-  const remove = (it: Item) => {
-    const id = itemId(it.s, it.k);
-    const upsertNext = { ...overrides.upsert };
-    delete upsertNext[id];
-    const deleted = Array.from(new Set([...overrides.deleted, id]));
-    persist({ upsert: upsertNext, deleted });
+  const performWrite = async (write: PendingWrite, reason: string) => {
+    setBusy(true);
+    try {
+      if (write.kind === 'upsert') await store.upsert(write.item, reason);
+      else if (write.kind === 'delete') await store.remove(write.item, reason);
+      else await store.rollback(write.item, write.revision, reason);
+      message.success(
+        write.kind === 'delete' ? '已删除（软删，版本保留）' : write.kind === 'rollback' ? '已回滚（生成新 revision）' : '已保存',
+      );
+      setPending(null);
+      await load(true);
+    } catch (err) {
+      message.error(errorText(err));
+      if (!store.localWrites) setPending(null);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const reset = () => {
-    clearOverrides();
-    setOverrides({ upsert: {}, deleted: [] });
+  const requestWrite = (write: PendingWrite) => {
+    // 演示模式（mock）不调用后端、也不需要原因：保持原有「本地可编辑」体验。
+    if (store.localWrites) {
+      void performWrite(write, '');
+      return;
+    }
+    setPending(write);
   };
+
+  const resetDemo = async () => {
+    store.reset();
+    await load(true);
+    message.success('已恢复演示数据');
+  };
+
+  const userMenuItems: MenuProps['items'] = session
+    ? [
+        {
+          key: 'who',
+          disabled: true,
+          label: (
+            <div className="user-who">
+              <b>{session.user.name}</b>
+              <div className="hint">{session.user.email || '—'}</div>
+            </div>
+          ),
+        },
+        {
+          key: 'scope',
+          disabled: true,
+          label: (
+            <div className="hint">
+              租户 {session.user.tenantId || '（令牌未带）'} · 应用 {session.user.appId || '平台'}
+            </div>
+          ),
+        },
+        { type: 'divider' },
+        { key: 'logout', label: '退出登录', danger: true },
+      ]
+    : [];
+
+  if (!authReady) {
+    return (
+      <Layout className="app">
+        <div className="boot">
+          <Spin size="large" />
+          <div className="hint">正在校验登录状态…</div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (needsLogin) {
+    return <LoginPage error={authError} onLogin={() => void login()} />;
+  }
 
   return (
-    <AntdApp>
-      <Layout className="app">
-        <Layout.Header className="topbar">
-          <div className="brand">
-            <span className="mark">A</span>
-            <span>配置中心</span>
-            <Text type="secondary" className="sub">
-              Config Console
-            </Text>
-          </div>
-          <nav className="nav">
-            <a className={!route.domain ? 'on' : ''} href="#/">
-              概览
-            </a>
-            <a className={route.domain ? 'on' : ''} href={href({ domain: meta.domains[0]?.name })}>
-              配置域
-            </a>
-            <span className="nav-disabled">密钥中心</span>
-            <span className="nav-disabled">变更记录</span>
-          </nav>
-          <div className="grow" />
-          <Space size={8}>
-            <Tag color="green">实例 prod</Tag>
-            <Tag>演示 · 本地可编辑</Tag>
-            <Popconfirm title="恢复演示数据？" description="会清空本机改动。" onConfirm={reset}>
+    <Layout className="app">
+      <Layout.Header className="topbar">
+        <div className="brand">
+          <span className="mark">A</span>
+          <span>配置中心</span>
+          <Text type="secondary" className="sub">
+            Config Console
+          </Text>
+        </div>
+        <nav className="nav">
+          <a className={!route.domain ? 'on' : ''} href="#/">
+            概览
+          </a>
+          <a className={route.domain ? 'on' : ''} href={href({ domain: meta.domains[0]?.name })}>
+            配置域
+          </a>
+          <span className="nav-disabled">密钥中心</span>
+          <span className="nav-disabled">变更记录</span>
+        </nav>
+        <div className="grow" />
+        <Space size={8}>
+          <Tag color="green">实例 prod</Tag>
+          {store.localWrites ? <Tag>演示 · 本地可编辑</Tag> : <Tag color="blue">{RUNTIME_MODE_LABEL}</Tag>}
+          {store.canReset ? (
+            <Popconfirm title="恢复演示数据？" description="会清空本机改动。" onConfirm={() => void resetDemo()}>
               <Button size="small">重置</Button>
             </Popconfirm>
-          </Space>
-        </Layout.Header>
-        <Layout.Content className="wrap">
-          <Alert
-            className="banner"
-            type="warning"
-            showIcon
-            message="演示数据：键名 / 层级 / 数量来自配置中心真实预检（2,020 个唯一键），值已脱敏。编辑保存在浏览器本地。"
-          />
-          {!route.domain ? (
-            <Overview meta={meta} go={go} />
-          ) : route.edit ? (
-            route.group ? (
-              <GroupEditorPage
-                domain={route.domain}
-                group={route.group}
-                items={items}
-                meta={meta}
-                go={go}
-                onOpen={setModal}
-                onDelete={remove}
-              />
-            ) : (
-              <GroupPicker domain={route.domain} items={items} meta={meta} go={go} />
-            )
+          ) : null}
+          {session ? (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: userMenuItems,
+                onClick: ({ key }) => {
+                  if (key === 'logout') void logout();
+                },
+              }}
+            >
+              <Button size="small">{session.user.name}</Button>
+            </Dropdown>
           ) : (
-            <DomainPage
+            <Button size="small" type="primary" onClick={() => void login()}>
+              登录
+            </Button>
+          )}
+        </Space>
+      </Layout.Header>
+      <Layout.Content className="wrap">
+        <Alert
+          className="banner"
+          type={store.localWrites ? 'warning' : 'info'}
+          showIcon
+          message={
+            store.localWrites
+              ? '演示数据：键名 / 层级 / 数量来自配置中心真实预检（2,020 个唯一键），值已脱敏。编辑保存在浏览器本地。'
+              : `已接入配置中心真实接口（${API_BASE}）：读需 config:read，写需 config:write 并填写原因，回滚需 config:publish。`
+          }
+        />
+        {status === 'loading' ? (
+          <div className="page-state">
+            <Spin size="large" />
+            <div className="hint">正在加载配置…</div>
+          </div>
+        ) : status !== 'ready' ? (
+          <Result
+            status={status === 'error' ? 'error' : status === 'forbidden' ? '403' : 'warning'}
+            title={
+              status === 'forbidden' ? '无权限访问配置中心' : status === 'unauthorized' ? '需要登录（或会话已过期）' : '加载失败'
+            }
+            subTitle={errorMessage || (status === 'forbidden' ? '当前账号缺少 config:read 权限点。' : '')}
+            extra={
+              <Space>
+                <Button type="primary" onClick={() => void load()}>
+                  重试
+                </Button>
+                {status === 'unauthorized' ? <Button onClick={() => void login()}>重新登录</Button> : null}
+              </Space>
+            }
+          />
+        ) : items.length === 0 ? (
+          <div className="page-state">
+            <Empty description={store.localWrites ? '演示数据为空' : '该租户 / 应用下暂无配置项'} />
+          </div>
+        ) : !route.domain ? (
+          <Overview meta={meta} go={go} />
+        ) : route.edit ? (
+          route.group ? (
+            <GroupEditorPage
               domain={route.domain}
+              group={route.group}
               items={items}
               meta={meta}
               go={go}
               onOpen={setModal}
-              onDelete={remove}
-              onView={(key) => setViewing({ domain: route.domain!, key })}
+              onDelete={(it) => requestWrite({ kind: 'delete', item: it })}
             />
-          )}
-        </Layout.Content>
-      </Layout>
+          ) : (
+            <GroupPicker domain={route.domain} items={items} meta={meta} go={go} />
+          )
+        ) : (
+          <DomainPage
+            domain={route.domain}
+            items={items}
+            meta={meta}
+            go={go}
+            onOpen={setModal}
+            onDelete={(it) => requestWrite({ kind: 'delete', item: it })}
+            onView={(key) => setViewing({ domain: route.domain!, key })}
+          />
+        )}
+      </Layout.Content>
       {modal ? (
         <ItemModal
           state={modal}
           items={items}
           onCancel={() => setModal(null)}
           onSubmit={(it) => {
-            upsert(it);
             setModal(null);
+            requestWrite({ kind: 'upsert', item: it });
           }}
         />
       ) : null}
@@ -202,15 +416,122 @@ export default function Root() {
         items={items}
         onClose={() => setViewing(null)}
         onEdit={(it) => setModal({ mode: 'edit', item: it, domain: it.d, group: it.g, scope: it.s })}
-        onDelete={remove}
+        onDelete={(it) => requestWrite({ kind: 'delete', item: it })}
+        historyFor={store.remoteEffective ? (it) => store.history(it) : undefined}
+        onRollback={(it, revision) => requestWrite({ kind: 'rollback', item: it, revision })}
       />
-    </AntdApp>
+      {pending ? (
+        <ReasonModal
+          title={WRITE_TITLE[pending.kind]}
+          description={<WriteDescription write={pending} />}
+          confirmText={pending.kind === 'delete' ? '确认删除' : pending.kind === 'rollback' ? '确认回滚' : '保存'}
+          danger={pending.kind === 'delete'}
+          busy={busy}
+          onCancel={() => setPending(null)}
+          onConfirm={(reason) => void performWrite(pending, reason)}
+        />
+      ) : null}
+    </Layout>
+  );
+}
+
+/* ------------------------------ 登录 / 状态 ------------------------------ */
+
+function LoginPage({ error, onLogin }: { error: string; onLogin: () => void }) {
+  const mock = DATA_MODE === 'mock';
+  return (
+    <Layout className="app">
+      <div className="boot">
+        <Card className="login-card">
+          <div className="brand">
+            <span className="mark">A</span>
+            <span>配置中心</span>
+          </div>
+          <h1 className="page">登录后管理配置</h1>
+          <p className="desc">管理面 API 需要 JWT：读取需 config:read，写入需 config:write，回滚需 config:publish。</p>
+          {error ? <Alert className="banner" type="error" showIcon message={error} /> : null}
+          <Space>
+            <Button type="primary" onClick={onLogin}>
+              {mock ? '使用演示账号进入' : '使用 Autional 账号登录'}
+            </Button>
+          </Space>
+          <div className="hint" style={{ marginTop: 12 }}>
+            {mock ? '当前为演示鉴权（VITE_AUTH_MODE=mock）。' : `OIDC 授权码 + PKCE · ${OIDC.authorizeUrl}`}
+          </div>
+        </Card>
+      </div>
+    </Layout>
+  );
+}
+
+/** 写操作「原因」弹窗：后端要求 1–200 字并写审计。 */
+function ReasonModal(props: {
+  title: string;
+  description: ReactNode;
+  confirmText: string;
+  danger?: boolean;
+  busy?: boolean;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState('');
+  const trimmed = reason.trim();
+  const invalid = trimmed.length === 0 || trimmed.length > 200;
+  return (
+    <Modal
+      open
+      title={`${props.title} · 变更原因`}
+      okText={props.confirmText}
+      cancelText="取消"
+      okButtonProps={{ danger: props.danger, disabled: invalid, loading: props.busy }}
+      onCancel={props.onCancel}
+      onOk={() => {
+        if (!invalid) props.onConfirm(trimmed);
+      }}
+      destroyOnHidden
+    >
+      {props.description}
+      <Input.TextArea
+        rows={3}
+        maxLength={200}
+        showCount
+        autoFocus
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="例：排查网关日志 / 上线新连接池参数"
+      />
+    </Modal>
+  );
+}
+
+function WriteDescription({ write }: { write: PendingWrite }) {
+  const it = write.item;
+  return (
+    <div className="reason-desc">
+      <div>
+        <Text type="secondary">作用域</Text> {scopeLabel(it.s)}
+      </div>
+      <div>
+        <Text type="secondary">键</Text> <code className="mono">{it.k || '（新增）'}</code>
+      </div>
+      {write.kind === 'upsert' ? (
+        <div>
+          <Text type="secondary">新值</Text> <span className="mono small">{valueText(it.v)}</span>
+        </div>
+      ) : null}
+      {write.kind === 'rollback' ? (
+        <div>
+          <Text type="secondary">目标版本</Text> revision {write.revision}
+        </div>
+      ) : null}
+      <div className="hint">原因必填（1–200 字），会写入审计。</div>
+    </div>
   );
 }
 
 /* ------------------------------- 概览 ------------------------------- */
 
-function Overview({ meta, go }: { meta: ReturnType<typeof buildMeta>; go: (r: Route) => void }) {
+function Overview({ meta, go }: { meta: Meta; go: (r: Route) => void }) {
   return (
     <>
       <h1 className="page">配置中心概览</h1>
@@ -345,7 +666,7 @@ function Overview({ meta, go }: { meta: ReturnType<typeof buildMeta>; go: (r: Ro
 function DomainPage(props: {
   domain: string;
   items: Item[];
-  meta: ReturnType<typeof buildMeta>;
+  meta: Meta;
   go: (r: Route) => void;
   onOpen: (s: ModalState) => void;
   onDelete: (it: Item) => void;
@@ -575,7 +896,7 @@ function DomainPage(props: {
 
 /* ----------------------------- 组选择页 ----------------------------- */
 
-function GroupPicker(props: { domain: string; items: Item[]; meta: ReturnType<typeof buildMeta>; go: (r: Route) => void }) {
+function GroupPicker(props: { domain: string; items: Item[]; meta: Meta; go: (r: Route) => void }) {
   const { domain, meta, go } = props;
   const d = meta.domains.find((x) => x.name === domain);
   return (
@@ -653,20 +974,64 @@ function GroupEditorPage(props: {
   domain: string;
   group: string;
   items: Item[];
-  meta: ReturnType<typeof buildMeta>;
+  meta: Meta;
   go: (r: Route) => void;
   onOpen: (s: ModalState) => void;
   onDelete: (it: Item) => void;
 }) {
   const { domain, group, items, meta, go, onOpen, onDelete } = props;
-  const { message } = AntdApp.useApp();
   const services = useMemo(() => servicesInGroup(items, domain, group), [items, domain, group]);
   const hasBase = useMemo(() => items.some((x) => x.d === domain && x.g === group && x.s === ''), [items, domain, group]);
   const [scope, setScope] = useState<Scope>(hasBase ? '' : services[0] ?? '');
-  const ed = editorOf(domain, group);
+  // api 模式：编辑器 schema 以服务端 /editors 为准（404 回落本地注册表）；生效项用 /effective。
+  const [remoteEditor, setRemoteEditor] = useState<GroupEditor | null>(null);
+  const [remoteEff, setRemoteEff] = useState<EffectiveRow[] | null>(null);
+  const [effLoading, setEffLoading] = useState(false);
+  useEffect(() => {
+    if (!store.remoteEditor || editorOf(domain, group)) {
+      setRemoteEditor(null);
+      return;
+    }
+    let alive = true;
+    store
+      .editor(domain, group)
+      .then((next) => {
+        if (alive) setRemoteEditor(next);
+      })
+      .catch(() => {
+        if (alive) setRemoteEditor(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [domain, group]);
+  useEffect(() => {
+    if (!store.remoteEffective) {
+      setRemoteEff(null);
+      return;
+    }
+    let alive = true;
+    setEffLoading(true);
+    setRemoteEff(null);
+    store
+      .effective(scope, domain, group)
+      .then((rows) => {
+        if (alive) setRemoteEff(rows);
+      })
+      .catch(() => {
+        if (alive) setRemoteEff(null);
+      })
+      .finally(() => {
+        if (alive) setEffLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [scope, domain, group]);
+  const ed = editorOf(domain, group) ?? remoteEditor;
   const isRate = `${domain}|${group}` === RATE_LIMIT_GROUP;
   const custom = !!ed || isRate;
-  const eff = useMemo(() => groupEffective(items, domain, group, scope), [items, domain, group, scope]);
+  const eff = useMemo<EffectiveRow[]>(() => remoteEff ?? groupEffective(items, domain, group, scope), [remoteEff, items, domain, group, scope]);
   const covered = useMemo(() => {
     const s = new Set<string>();
     ed?.fields.forEach((f) => f.keys.forEach((k) => s.add(k)));
@@ -757,6 +1122,7 @@ function GroupEditorPage(props: {
             options={[{ value: '', label: '平台基座（默认）' }, ...services.map((s) => ({ value: s, label: s }))]}
           />
           <div className="grow" />
+          {effLoading ? <Spin size="small" /> : null}
           <Tag color={custom ? 'blue' : 'default'}>{custom ? '定制界面' : '默认界面'}</Tag>
           <Button
             type="primary"
@@ -999,10 +1365,43 @@ function PlacementDrawer(props: {
   onClose: () => void;
   onEdit: (it: Item) => void;
   onDelete: (it: Item) => void;
+  /** api 模式：读该位置的 append-only 版本历史（mock 模式为 undefined，不显示）。 */
+  historyFor?: (it: Item) => Promise<HistoryEntry[]>;
+  onRollback?: (it: Item, revision: number) => void;
 }) {
-  const { state, items, onClose, onEdit, onDelete } = props;
+  const { state, items, onClose, onEdit, onDelete, historyFor, onRollback } = props;
+  const [histId, setHistId] = useState('');
+  const [histRows, setHistRows] = useState<HistoryEntry[] | null>(null);
+  const [histLoading, setHistLoading] = useState(false);
+  const [histError, setHistError] = useState('');
+  const [histItem, setHistItem] = useState<Item | null>(null);
+
+  useEffect(() => {
+    setHistId('');
+    setHistRows(null);
+    setHistError('');
+    setHistItem(null);
+  }, [state?.domain, state?.key]);
+
   const list = state ? items.filter((x) => x.d === state.domain && x.k === state.key).sort((a, b) => (a.s || '').localeCompare(b.s || '')) : [];
   const base = list.find((x) => x.s === '');
+
+  const openHistory = async (it: Item) => {
+    if (!historyFor) return;
+    setHistId(itemId(it.s, it.k));
+    setHistItem(it);
+    setHistRows(null);
+    setHistError('');
+    setHistLoading(true);
+    try {
+      setHistRows(await historyFor(it));
+    } catch (err) {
+      setHistError(errorText(err));
+    } finally {
+      setHistLoading(false);
+    }
+  };
+
   return (
     <Drawer open={!!state} onClose={onClose} width={480} title={state?.key}>
       {state ? (
@@ -1029,6 +1428,11 @@ function PlacementDrawer(props: {
                     <Tag color={it.s ? (same ? 'default' : 'blue') : 'default'}>{it.s ? (same ? '与基座相同' : '覆盖基座') : '默认值'}</Tag>
                     <div className="grow" />
                     <Space size={2}>
+                      {historyFor ? (
+                        <Button size="small" type="link" onClick={() => void openHistory(it)}>
+                          历史
+                        </Button>
+                      ) : null}
                       <Button size="small" type="link" onClick={() => onEdit(it)}>
                         编辑
                       </Button>
@@ -1044,6 +1448,47 @@ function PlacementDrawer(props: {
               );
             })}
           </div>
+
+          {historyFor && histId ? (
+            <>
+              <div className="sub-title">变更历史 · {scopeLabel(histItem?.s ?? '')}</div>
+              {histLoading ? (
+                <div className="page-state">
+                  <Spin size="small" />
+                </div>
+              ) : histError ? (
+                <Alert type="error" showIcon message={histError} />
+              ) : !histRows || histRows.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无历史版本" />
+              ) : (
+                <div className="placement-list">
+                  {histRows.map((row, index) => (
+                    <div key={`${row.id}-${row.revision}`} className="placement">
+                      <div className="placement-head">
+                        <b>revision {row.revision}</b>
+                        <Tag>{row.created_by || '—'}</Tag>
+                        <div className="grow" />
+                        {onRollback && histItem && index > 0 ? (
+                          <Button size="small" type="link" onClick={() => onRollback(histItem, row.revision)}>
+                            回滚到此版本
+                          </Button>
+                        ) : (
+                          <Text type="secondary" className="small">
+                            {index === 0 ? '当前' : ''}
+                          </Text>
+                        )}
+                      </div>
+                      <div className="mono small">{valueText(row.value)}</div>
+                      <div className="hint">
+                        {row.created_at ? new Date(row.created_at).toLocaleString() : '—'}
+                        {row.reason ? ` · ${row.reason}` : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : null}
         </>
       ) : null}
     </Drawer>
