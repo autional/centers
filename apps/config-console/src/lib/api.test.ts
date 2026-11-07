@@ -98,17 +98,17 @@ describe('listAllItems 并发翻页', () => {
     expect([...state.pages].sort((a, b) => a - b)).toEqual([1, 2, 3]);
     // 第 1 页单独先发，其余页并发：峰值 ≥ 2 且 ≤ 4
     expect(state.peak).toBeGreaterThanOrEqual(2);
-    expect(state.peak).toBeLessThanOrEqual(4);
+    expect(state.peak).toBeLessThanOrEqual(8);
   });
 
-  it('并发度上限 4（total=1050 → 11 页）', async () => {
+  it('并发度上限 8（total=1050 → 11 页）', async () => {
     const { state } = installFetch({ total: 1050, delayMs: 3 });
 
     const rows = await listAllItems(100);
 
     expect(rows).toHaveLength(1050);
     expect(state.pages).toHaveLength(11);
-    expect(state.peak).toBeLessThanOrEqual(4);
+    expect(state.peak).toBeLessThanOrEqual(8);
   });
 
   it('跨页重复键按 id 去重且顺序不变', async () => {

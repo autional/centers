@@ -289,3 +289,34 @@ export async function fetchPortals(options: FetchPortalsOptions = {}): Promise<P
     signal?.removeEventListener('abort', forwardAbort);
   }
 }
+
+
+/**
+ * 目录不可用时的**静态兜底**（仅降级路径使用）。
+ *
+ * 背景：config 的 OAuth 客户端目前没有 tenant-service 的 admin scope，
+ * `GET /tenants/{id}/applications` 返回 403 `token scope does not allow this operation`，
+ * 顶栏「切换门户」于是只剩一条「平台控制台」。这里按根域派生出舰队已知的 9 个门户，
+ * 保证降级时仍可跳转；一旦 scope 补齐、目录恢复 200，这份兜底自动不再使用。
+ *
+ * 只列 code —— 域名由 buildPortalUrl 按 code 派生，不在这里维护域名表。
+ */
+export const FALLBACK_PORTAL_CODES: ReadonlyArray<{ code: string; name: string }> = [
+  { code: 'config', name: '配置中心' },
+  { code: 'secret', name: '密钥中心' },
+  { code: 'admin', name: '管理后台' },
+  { code: 'security', name: '安全中心' },
+  { code: 'platform', name: '平台控制台' },
+  { code: 'user', name: '用户中心' },
+  { code: 'status', name: '状态页' },
+  { code: 'trust', name: '信任中心' },
+  { code: 'developer', name: '开发者门户' },
+];
+
+export function fallbackPortals(): PortalApplication[] {
+  return FALLBACK_PORTAL_CODES.map((item, index) => ({
+    code: item.code,
+    name: item.name,
+    order: index,
+  }));
+}

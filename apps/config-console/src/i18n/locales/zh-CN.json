@@ -203,5 +203,14 @@
   "sidebar.items": "配置项",
   "sidebar.domains": "配置域",
   "sidebar.groups": "配置组",
-  "sidebar.services": "服务"
+  "sidebar.services": "服务",
+  "portal.name.config": "配置中心",
+  "portal.name.secret": "密钥中心",
+  "portal.name.admin": "管理后台",
+  "portal.name.security": "安全中心",
+  "portal.name.platform": "平台控制台",
+  "portal.name.user": "用户中心",
+  "portal.name.status": "状态页",
+  "portal.name.trust": "信任中心",
+  "portal.name.developer": "开发者门户"
 }

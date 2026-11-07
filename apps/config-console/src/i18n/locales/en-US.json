@@ -203,5 +203,14 @@
   "sidebar.items": "Items",
   "sidebar.domains": "Domains",
   "sidebar.groups": "Groups",
-  "sidebar.services": "Services"
+  "sidebar.services": "Services",
+  "portal.name.config": "Config Console",
+  "portal.name.secret": "Secret Center",
+  "portal.name.admin": "Admin Console",
+  "portal.name.security": "Security Center",
+  "portal.name.platform": "Platform Console",
+  "portal.name.user": "User Center",
+  "portal.name.status": "Status Page",
+  "portal.name.trust": "Trust Center",
+  "portal.name.developer": "Developer Portal"
 }

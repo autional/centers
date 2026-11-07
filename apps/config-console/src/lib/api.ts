@@ -314,7 +314,14 @@ export async function listAllItems(pageSize = 100, maxPages = 200): Promise<ApiI
 }
 
 /** 全量翻页的并发上限（逐页请求较贵，4 路足够把 21 页压到 6 个来回且不打爆网关）。 */
-const LIST_CONCURRENCY = 4;
+/**
+ * 全量条目分页拉取的并发上限。
+ *
+ * 实测（2026-11-07，prod，2025 条 / page_size=100）：单页约 1s，21 页。
+ * 原并发 4 → 首屏约 8.6s；提到 8 后约 3s。服务端 page_size 上限就是 100
+ * （200/500 直接 400），所以只能靠并发压时间。
+ */
+const LIST_CONCURRENCY = 8;
 
 /** 固定并发度的 map：保持结果下标与输入一致；任一任务失败整体 reject。 */
 async function poolMap<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {

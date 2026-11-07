@@ -8,6 +8,7 @@ import {
   PLATFORM_TENANT_ID,
   buildPortalUrl,
   fallbackPlatformUrl,
+  fallbackPortals,
   fetchPortals,
   filterPortals,
   resolveTenantId,
@@ -82,7 +83,16 @@ export function PortalMenu({ session }: { session: Session | null }) {
     const root = rootDomainOf(hostname);
 
     if (state.degraded) {
-      return [{ code: 'platform', name: t('portal.platformFallback'), url: fallbackPlatformUrl(hostname) }];
+      // 目录不可用（403/401/超时）：按 code 派生 9 个已知门户，至少保证能跳转
+      const fallback = fallbackPortals()
+        .filter((portal) => portal.code !== CURRENT_PORTAL_CODE)
+        .map((portal) => ({
+          code: portal.code,
+          name: t(`portal.name.${portal.code}`, portal.name),
+          url: buildPortalUrl(portal, root, protocol),
+        }))
+        .filter((portal) => portal.url !== '');
+      return fallback.length ? fallback : [{ code: 'platform', name: t('portal.platformFallback'), url: fallbackPlatformUrl(hostname) }];
     }
     return state.portals
       .map((portal) => ({
