@@ -93,26 +93,39 @@
 
 ---
 
-## M4 门禁登记 —— 部分完成（2026-11-07）
+## M4 门禁登记 —— ✅ 已完成（2026-11-07）
 
-已做：
+| 闸门 | 结果（canonical 脚本 + 两站已登记） |
+|---|---|
+| `check-headers` | **16 站一致**（config / secret 顶栏由 DS AppShell 提供：64px 令牌 + sticky） |
+| `check-icons` | **16 站一致（self 16 / cdn 0）**——两站按自包含形态交付：本地图标 + 本地 manifest + 令牌走 npm |
+| `check-consistency` | config / secret **零新增错误**；剩余 4 条是 admin / security / trust / authenticator 的既有问题 |
 
-- `autional-cn/sites/config` 与 `sites/secret` 两个 symlink 已建（与其它 14 站同构）。
-- `check-headers`：**16 站全部通过**（config / secret 的顶栏由 DS AppShell 提供，64px 令牌 + sticky）。
-- `check-consistency` 的 C5：两站的 antd 直接入口已登记到
-  `ui/verification/antd-entries.json`（config: other 66 / files 12 / bridge 1；secret: other 34 / files 7 / bridge 1），
-  且 **closed kinds（Table / Drawer / RangePicker）在两站均为 0**（已改用 DataTable / Drawer / DateRangeFilter）。
-  提交在 **`D:\ws\deploy-sync\ui`**（canonical）：`1da0aa5 chore(registry): 登记 config 与 secret 的 antd 入口`。
+登记内容（提交在 canonical `D:\ws\deploy-sync\ui`）：
 
-未做 / 需要决策：
+- `verification/antd-entries.json`：config（other 66 / files 12 / bridge 1）、secret（other 34 / files 7 / bridge 1），
+  两站 closed kinds（Table / Drawer / RangePicker）均为 0。
+- `verification/consumer-targets.json`：两站 `publicDirs` + `iconDelivery: self` + `themeColors: #003153`。
 
-1. **`check-icons` 的 publicDirs 没登记两站**。原因：该闸门要求「运行期资产走 CDN + `<head>` link tokens.css」，
-   而 config/secret 按 admin 2026-11-03 的决定**把令牌打包进 bundle**（CSP 与可用性考虑）。
-   两套口径冲突，需要先在设计系统侧决定「bundled tokens 站」怎么登记（新增豁免类别或放宽 I23），
-   否则登记只会给已经 42 项红的 check-icons 再加噪声。
-2. **两个 ui 克隆的坑**：`D:\ws\deploy-sync\ui` 是 canonical（2026-11-06）；
-   `D:\ws\autional-cn\ui` 是 2026-10-28 的旧克隆，但 `check-*` 脚本只在它下面能跑（`../sites` 存在）。
-   本次把 registry 修改同时写进了 canonical（已提交）与旧克隆的**工作区**（未提交），
-   以便在旧克隆跑闸门时不出现「config/secret 未登记」。同步旧克隆时注意别覆盖用户那 3 个未提交文件。
-3. 剩余 4 个 `check-consistency` ERROR 是**他人站点既有问题**（admin / security / trust / authenticator），
-   与本次改动无关。
+站点侧对应改动（config `23f79b7` / secret `71c7ea3`）：
+
+- 8 个图标（含 `favicon-48x48.png`）从 `ui/assets` 复制，逐字节一致（I12–I14）。
+- `public/site.webmanifest`：本地图标路径 + `theme_color` 与页面 meta 同源；`index.html` 用
+  `<!-- icons:start/end -->` 标记块（6 条 link，含 manifest），与 `sync-consumers` 的生成格式一致。
+- 令牌走 `@import '@autional/tokens/tokens.css'`（构建期），满足 self 形态的 I23。
+
+### ⚠️ 跑闸门的正确姿势（两个 ui 克隆）
+
+`D:\ws\deploy-sync\ui` 是 canonical（含 self 形态支持）；`D:\ws\autional-cn\ui` 是旧克隆，
+其 `check-icons.mjs` 还不认识 `iconDelivery`。在旧克隆里直接跑会误报 I20/I23/I18。
+请用 canonical 脚本 + 显式站点目录：
+
+```powershell
+$env:AUTIONAL_SITES_DIR = "D:\ws\autional-cn\sites"
+node D:\ws\deploy-sync\ui\scripts\check-icons.mjs
+node D:\ws\deploy-sync\ui\scripts\check-headers.mjs
+node D:\ws\deploy-sync\ui\scripts\check-consistency.mjs
+```
+
+（旧克隆里的 `consumer-targets.json` / `antd-entries.json` 已同步为同一份内容，未提交，
+以免与用户原有的 3 个未提交文件混在一起。）
