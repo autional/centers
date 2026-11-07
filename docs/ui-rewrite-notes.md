@@ -143,3 +143,41 @@ node D:\ws\deploy-sync\ui\scripts\check-consistency.mjs
 结论：令牌在 `<html>` / `<body>` / AppShell 三层都正确生效，此前「body 仍为浅色」是桌面浏览器工具
 在切换过程中的读数，不是样式缺陷。顺带修掉 secret 的 `ThemeProvider storageKey` 仍沿用
 `config-console-theme` 的问题（改为 `secret-console-theme`）。
+
+---
+
+## 最终状态（2026-11-07）
+
+### 测试与构建
+
+| | config | secret |
+|---|---|---|
+| typecheck | ✅ | ✅ |
+| 单测 | **134**（11 文件） | **30**（5 文件） |
+| build | ✅ | ✅ |
+| CI | ✅ 含 `check:editors-i18n` | ✅ 新增（pnpm + test + typecheck/build） |
+
+新增测试：`i18n/locales.test.ts`（key 一致 / 无空值 / 英文无中文 / 占位符一致）、
+`lib/legacy-hash.test.ts`（旧 hash → path，未知不猜）。
+
+### 冒烟（headless Chrome，9 条路由）
+
+```
+config / domains/数据库 / domains/数据库/PostgreSQL / changes / changesets
+secret / secrets / audit / secrets?key=…（深链直接开抽屉）
+```
+
+全部有页头、行数正确、**0 控制台错误 / 0 pageerror**。
+
+### 设计系统闸门（canonical 脚本）
+
+| 闸门 | 结果 |
+|---|---|
+| check-headers | ✅ 16 站一致 |
+| check-icons | ✅ 16 站一致（self 16 / cdn 0） |
+| check-consistency | 4 条错误，**全部为其它站既有问题**（admin / security / trust / authenticator），config / secret 零新增 |
+
+### 健壮性
+
+- 两站都用 `<ErrorBoundary>` 包住路由：渲染异常不再白屏（DS 组件，文案随 `<html lang>`）。
+- secret 的 `ThemeProvider storageKey` 已从 `config-console-theme` 改为 `secret-console-theme`。
