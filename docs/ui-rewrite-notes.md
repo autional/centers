@@ -90,3 +90,29 @@
 5. 保留 `vercel.ts` 的 **CSP 全套响应头**（config 没有，secret 有，别丢）。
 6. 深链：config 的 `secretCenterUrl()` 现在指向 `#/secrets?key=`；secret 改为 history 路由后，
    把这里同步改成 `/secrets?key=`。
+
+---
+
+## M4 门禁登记 —— 部分完成（2026-11-07）
+
+已做：
+
+- `autional-cn/sites/config` 与 `sites/secret` 两个 symlink 已建（与其它 14 站同构）。
+- `check-headers`：**16 站全部通过**（config / secret 的顶栏由 DS AppShell 提供，64px 令牌 + sticky）。
+- `check-consistency` 的 C5：两站的 antd 直接入口已登记到
+  `ui/verification/antd-entries.json`（config: other 66 / files 12 / bridge 1；secret: other 34 / files 7 / bridge 1），
+  且 **closed kinds（Table / Drawer / RangePicker）在两站均为 0**（已改用 DataTable / Drawer / DateRangeFilter）。
+  提交在 **`D:\ws\deploy-sync\ui`**（canonical）：`1da0aa5 chore(registry): 登记 config 与 secret 的 antd 入口`。
+
+未做 / 需要决策：
+
+1. **`check-icons` 的 publicDirs 没登记两站**。原因：该闸门要求「运行期资产走 CDN + `<head>` link tokens.css」，
+   而 config/secret 按 admin 2026-11-03 的决定**把令牌打包进 bundle**（CSP 与可用性考虑）。
+   两套口径冲突，需要先在设计系统侧决定「bundled tokens 站」怎么登记（新增豁免类别或放宽 I23），
+   否则登记只会给已经 42 项红的 check-icons 再加噪声。
+2. **两个 ui 克隆的坑**：`D:\ws\deploy-sync\ui` 是 canonical（2026-11-06）；
+   `D:\ws\autional-cn\ui` 是 2026-10-28 的旧克隆，但 `check-*` 脚本只在它下面能跑（`../sites` 存在）。
+   本次把 registry 修改同时写进了 canonical（已提交）与旧克隆的**工作区**（未提交），
+   以便在旧克隆跑闸门时不出现「config/secret 未登记」。同步旧克隆时注意别覆盖用户那 3 个未提交文件。
+3. 剩余 4 个 `check-consistency` ERROR 是**他人站点既有问题**（admin / security / trust / authenticator），
+   与本次改动无关。
