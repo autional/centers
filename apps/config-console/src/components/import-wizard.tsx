@@ -181,7 +181,7 @@ export function ImportWizard({ open, onClose, onDone }: { open: boolean; onClose
             dataSource={preview?.items ?? []}
             columns={columns as any}
             pagination={{ pageSize: 10, showSizeChanger: false }}
-            scroll={{ x: 800 }}
+            scroll={{ x: 'max-content' }}
           />
         </div>
       )}

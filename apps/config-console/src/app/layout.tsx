@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, Outlet, useLocation, useNavigate } from 'react-router';
-import { Button, Menu, Result, Spin, Tag, Tooltip } from 'antd';
+import { Alert, Button, Menu, Result, Spin, Tag, Tooltip } from 'antd';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AppShell, LanguageSwitcher, ThemeToggle, UserMenu } from '@autional/ui';
 import type { UserMenuItemSpec } from '@autional/ui';
-import { DATA_MODE, ENV_LABEL } from '@/lib/config';
+import { API_BASE, DATA_MODE, ENV_LABEL } from '@/lib/config';
 import { store } from '@/lib/data';
 import { useSession } from '@/hooks/use-session';
 import { ConfigDataProvider, useConfigData } from './config-data';
@@ -160,7 +160,19 @@ function Shell({ session, onLogout }: { session: ReturnType<typeof useSession>['
           }
         />
       ) : (
-        <Outlet />
+        <>
+          <Alert
+            className="mb-4"
+            type={store.localWrites ? 'warning' : 'info'}
+            showIcon
+            title={
+              store.localWrites
+                ? t('banner.demo')
+                : t('banner.api', { base: API_BASE })
+            }
+          />
+          <Outlet />
+        </>
       )}
     </AppShell>
   );

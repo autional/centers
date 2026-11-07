@@ -196,5 +196,7 @@
   "import.action.skipped": "跳过",
   "changes.operator": "操作人",
   "domains.editGroup": "编辑该组",
-  "changes.allDomains": "全部配置域"
+  "changes.allDomains": "全部配置域",
+  "banner.demo": "演示数据：键名 / 层级 / 数量来自配置中心真实预检（2,020 个唯一键），值已脱敏。编辑保存在浏览器本地。",
+  "banner.api": "已接入配置中心真实接口（{{base}}）：读需 config:read，写需 config:write 并填写原因，回滚需 config:publish。"
 }

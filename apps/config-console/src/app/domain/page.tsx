@@ -14,6 +14,7 @@ import { useWriteGate } from '@/hooks/use-write-gate';
 import { ItemModal } from '@/components/item-modal';
 import type { ItemModalState } from '@/components/item-modal';
 import { PlacementDrawer } from '@/components/placement-drawer';
+import { TransferActions } from '@/components/transfer-actions';
 import { isMasked } from '@/lib/reveal';
 
 const TYPE_TAG: Record<ItemType, string> = { int: 'blue', bool: 'green', yaml: 'orange', scalar: 'default' };
@@ -79,6 +80,7 @@ export default function DomainDetailPage() {
             <Link to="/domains" className="text-sm text-[var(--color-primary-600)]">
               {t('common.back')}
             </Link>
+            <TransferActions onImported={reload} />
             <Button type="primary" icon={<Plus size={14} />} onClick={openAdd}>
               {t('domains.addItem')}
             </Button>
@@ -88,7 +90,7 @@ export default function DomainDetailPage() {
 
       <Alert className="mb-4" type="info" showIcon title={t('domains.inheritHint')} />
 
-      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
         <PageSection  className="self-start">
           <div className="px-3 py-2 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
             {t('domains.groupList')}
@@ -123,7 +125,7 @@ export default function DomainDetailPage() {
           </ul>
         </PageSection>
 
-        <PageSection>
+        <PageSection className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Input.Search
               allowClear
@@ -168,7 +170,7 @@ export default function DomainDetailPage() {
             rowKey={(row: any) => (single ? itemId(row.s, row.k) : row.k)}
             dataSource={rows as any[]}
             pagination={{ pageSize: 50, showSizeChanger: false }}
-            scroll={{ x: 900 }}
+            scroll={{ x: 'max-content' }}
             columns={
               single
                 ? [

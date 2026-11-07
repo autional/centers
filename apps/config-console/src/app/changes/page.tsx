@@ -143,7 +143,7 @@ export default function ChangesPage() {
               loading={loading}
               dataSource={rows}
               columns={columns as any}
-              scroll={{ x: 1000 }}
+              scroll={{ x: 'max-content' }}
               pagination={{
                 current: page,
                 pageSize: CHANGES_PAGE_SIZE,
