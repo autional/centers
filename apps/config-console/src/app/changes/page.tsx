@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Input, Select, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { AppPageHeader, SectionCard } from '@autional/ui';
-import { DataTable } from '@autional/ui/antd';
+import { DataTable, DateRangeFilter } from '@autional/ui/antd';
 import { CHANGES_PAGE_SIZE, buildChangesQuery, normalizeChanges, toChangeRow } from '@/lib/changes';
 import type { ChangeRow } from '@/lib/changes';
 import { changes as fetchChanges } from '@/lib/api';
@@ -17,6 +17,8 @@ export default function ChangesPage() {
   const { meta } = useConfigData();
   const [service, setService] = useState('');
   const [prefix, setPrefix] = useState('');
+  const [operator, setOperator] = useState('');
+  const [range, setRange] = useState<[string, string] | null>(null);
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<ChangeRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -28,7 +30,17 @@ export default function ChangesPage() {
     setLoading(true);
     setError('');
     try {
-      const query = buildChangesQuery({ service_name: service || undefined, key_prefix: prefix || undefined }, page, CHANGES_PAGE_SIZE);
+      const query = buildChangesQuery(
+        {
+          service_name: service || undefined,
+          key_prefix: prefix || undefined,
+          created_by: operator || undefined,
+          from: range ? new Date(range[0]) : null,
+          to: range ? new Date(range[1]) : null,
+        },
+        page,
+        CHANGES_PAGE_SIZE,
+      );
       const result = normalizeChanges(await fetchChanges(query), page, CHANGES_PAGE_SIZE);
       setRows((result.items ?? []).map((item, index) => toChangeRow(item, index)));
       setTotal(result.total ?? 0);
@@ -39,7 +51,7 @@ export default function ChangesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, prefix, service]);
+  }, [page, prefix, service, operator, range]);
 
   useEffect(() => {
     void load();
@@ -84,11 +96,27 @@ export default function ChangesPage() {
               ]}
             />
             <Input.Search
-              className="w-72"
+              className="w-64"
               allowClear
               placeholder={t('changes.keyPrefix')}
-              onChange={(event) => {
-                setPrefix(event.target.value.trim());
+              onSearch={(value) => {
+                setPrefix(value.trim());
+                setPage(1);
+              }}
+            />
+            <Input.Search
+              className="w-56"
+              allowClear
+              placeholder={t('changes.operator')}
+              onSearch={(value) => {
+                setOperator(value.trim());
+                setPage(1);
+              }}
+            />
+            <DateRangeFilter
+              value={range}
+              onChange={(value) => {
+                setRange(value);
                 setPage(1);
               }}
             />

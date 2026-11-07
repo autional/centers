@@ -193,5 +193,6 @@
   "import.action.update": "更新",
   "import.action.unchanged": "不变",
   "import.action.invalid": "非法",
-  "import.action.skipped": "跳过"
+  "import.action.skipped": "跳过",
+  "changes.operator": "操作人"
 }
