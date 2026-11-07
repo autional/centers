@@ -32,7 +32,8 @@ import {
 } from 'antd';
 import type { TableProps } from 'antd';
 
-import { getChangeset, listChangesets, publishChangeset, rejectChangeset } from '../lib/api';
+import { getChangeset, listChangesets, publishChangeset, rejectChangeset, reveal } from '../lib/api';
+import { MASK_PLACEHOLDER, validateReason } from '../lib/reveal';
 import type { Changeset, ChangesetDetail } from '../lib/api';
 import {
   CHANGESETS_PAGE_SIZE,
@@ -329,6 +330,13 @@ function ChangesetDrawer({ id, onClose, onChanged }: { id: string; onClose: () =
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
+  // 详情里的「查看明文」：值仍是遮罩时可按原因查看；明文只在内存里，关抽屉即丢。
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
+  const [revealTarget, setRevealTarget] = useState<{ serviceName: string; key: string } | null>(null);
+  const [revealReason, setRevealReason] = useState('');
+  const [revealError, setRevealError] = useState('');
+  const [revealBusy, setRevealBusy] = useState(false);
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -385,6 +393,33 @@ function ChangesetDrawer({ id, onClose, onChanged }: { id: string; onClose: () =
     }
   };
 
+  const runReveal = async () => {
+    if (!revealTarget) return;
+    const check = validateReason(revealReason);
+    if (!check.ok) {
+      setRevealError(check.error ?? '请填写查看原因');
+      return;
+    }
+    setRevealBusy(true);
+    setRevealError('');
+    try {
+      const res = await reveal({ service_name: revealTarget.serviceName, key: revealTarget.key, reason: check.value });
+      setRevealed((prev) => ({ ...prev, [`${revealTarget.serviceName}|${revealTarget.key}`]: res.value }));
+      setRevealTarget(null);
+    } catch (err) {
+      const code = errorStatus(err);
+      const hint =
+        code === 403
+          ? '需要 config:write 权限。'
+          : code === 404
+            ? '该键在当前作用域不存在（草稿新增的键没有现值）。'
+            : '';
+      setRevealError(`${hint}${errorText(err)}`);
+    } finally {
+      setRevealBusy(false);
+    }
+  };
+
   const entryColumns: TableProps<ChangesetDetail['entries'][number]>['columns'] = [
     {
       title: '服务',
@@ -398,8 +433,38 @@ function ChangesetDrawer({ id, onClose, onChanged }: { id: string; onClose: () =
       title: '值',
       dataIndex: 'value',
       ellipsis: true,
-      // 后端已按读面规则遮罩（`••••••`），这里**原样展示**，不再二次转换。
-      render: (value: string) => <span className="mono small">{value === '' ? '（空）' : value}</span>,
+      // 后端按读面规则遮罩；遮罩行可按原因查看明文（与配置项抽屉同一 reveal 接口）。
+      render: (value: string, row) => {
+        const id = `${row.service_name}|${row.key}`;
+        const shown = revealed[id];
+        if (shown !== undefined) {
+          return (
+            <Space size={6}>
+              <span className="mono small">{shown === '' ? '（空）' : shown}</span>
+              <Tag color="gold">本次会话可见</Tag>
+            </Space>
+          );
+        }
+        if (value === MASK_PLACEHOLDER) {
+          return (
+            <Space size={6}>
+              <span className="mono small">{value}</span>
+              <Button
+                size="small"
+                type="link"
+                onClick={() => {
+                  setRevealError('');
+                  setRevealReason('');
+                  setRevealTarget({ serviceName: row.service_name, key: row.key });
+                }}
+              >
+                查看明文
+              </Button>
+            </Space>
+          );
+        }
+        return <span className="mono small">{value === '' ? '（空）' : value}</span>;
+      },
     },
     {
       title: '类型',
@@ -532,6 +597,33 @@ function ChangesetDrawer({ id, onClose, onChanged }: { id: string; onClose: () =
       >
         {body}
       </Drawer>
+
+      {revealTarget ? (
+        <Modal
+          open
+          title="查看明文"
+          okText="查看"
+          confirmLoading={revealBusy}
+          onOk={() => void runReveal()}
+          onCancel={() => {
+            setRevealTarget(null);
+            setRevealError('');
+          }}
+        >
+          <p className="hint">
+            键：<code className="mono">{revealTarget.key}</code>
+          </p>
+          <Input.TextArea
+            rows={2}
+            maxLength={200}
+            showCount
+            value={revealReason}
+            placeholder="填写查看原因（1–200 字），会写入审计"
+            onChange={(e) => setRevealReason(e.target.value)}
+          />
+          {revealError ? <Alert style={{ marginTop: 8 }} type="error" showIcon message={revealError} /> : null}
+        </Modal>
+      ) : null}
 
       {action ? (
         <ActionReasonModal
