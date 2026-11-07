@@ -10,20 +10,35 @@
 ## 结构
 
 ```
+config/
+├─ apps/config-console/          控制台应用（Vite + React 19 + Ant Design 6 + TS）
+│  └─ src/
+│     ├─ app/                    路由页面（AppShell 外壳 + AppPageHeader 页头）
+│     ├─ components/             领域组件
+│     ├─ lib/                    纯逻辑层（接口 / 鉴权 / 模型 / 编辑器 schema）
+│     ├─ i18n/                   中英双语资源（扁平点号 key）
+│     └─ styles/globals.css      令牌接入（@autional/tokens）与 Tailwind 入口
+├─ pnpm-workspace.yaml
+└─ vercel.ts                     两区部署与 /bff 代理
+```
+
+领域模型（域 / 组 / 项）：
+
+```
 配置域（导航 / 统计）
  └ 配置组（编辑单元，一个组一张表单）
     └ 配置项（写入单元，独立 revision）
 ```
 
 - 域只用于导航；编辑入口在**组**。
-- 组有定制界面（`src/lib/editors.ts` 注册）时用定制表单；否则用默认表单。
+- 组有定制界面（`apps/config-console/src/lib/editors.ts` 注册）时用定制表单；否则用默认表单。
 - 组内未被定制表单覆盖的项，自动落入「其他项（默认表单）」，不丢项。
 - 作用域：平台基座 / 某个服务。服务未定义 → 继承基座；定义 → 覆盖。
 
 ### 顶栏「门户」切换（2026-11-06）
 
 - 目录**来自平台**（不维护站点域名表）：`GET /bff/tenant/api/v1/admin/tenants/{tenantId}/applications?type=portal&is_platform=true&status=active`
-  （实现 `src/lib/portal.ts`，纯函数单测 `portal.test.ts`）。
+  （实现 `apps/config-console/src/lib/portal.ts`，纯函数单测 `portal.test.ts`）。
 - 租户：会话 JWT `tenantId` → `VITE_TENANT_ID` → 平台常量 `01KSQCBNVMS6SX64PJS937CE33`。
 - 过滤：排除 `auth`/`landing`/`authenticator`；`platform` 仅平台租户；`admin`/`security` 仅管理面角色
   （`super_admin|admin|security_admin|user_manager`；令牌未带 roles 时不过滤，避免误伤）。
@@ -39,20 +54,19 @@
 ## 运行
 
 ```bash
-npm install
-npm run dev       # http://localhost:13120
-npm run build     # 产物 dist/
-npm run preview
+pnpm install
+pnpm dev          # http://localhost:13120
+pnpm build        # 产物 apps/config-console/dist/
+pnpm preview
 ```
 
 ## 测试
 
 ```bash
-npm test          # vitest run（纯逻辑单测，node 环境，无需 jsdom）
-npm run test:watch
+pnpm test         # vitest run（纯逻辑单测，node 环境，无需 jsdom）
 ```
 
-覆盖 `src/lib/` 的纯逻辑层（不触 DOM / 网络）：
+覆盖 `apps/config-console/src/lib/` 的纯逻辑层（不触 DOM / 网络）：
 
 - `transfer.ts`：导出结构与排序、JSON/YAML 往返、遮罩项 skipped、`toImportEntries` 过滤、
   非法条目（键/类型/值）判 invalid、`diffEntries` 计数（create/update/unchanged/invalid/skipped）。
@@ -94,8 +108,8 @@ npm run test:watch
 ### mock 模式（现状，默认）
 
 ```bash
-npm run dev                 # 无需后端
-VITE_DATA_MODE=mock npm run build
+pnpm dev                    # 无需后端
+VITE_DATA_MODE=mock pnpm build
 ```
 
 - 编辑落在浏览器 localStorage，「重置」恢复演示数据；
@@ -129,7 +143,7 @@ VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
 - 所有写操作（新增/修改/删除/回滚）都弹「变更原因」（1–200 字），随请求写审计；
 - 抽屉里可查看某键的 append-only 版本历史并回滚（回滚需 `config:publish`）；
 - 组编辑器优先读 `GET /editors`；服务端已内置 **51 组** schema（启动期 seed 到 `config_editors`），
-  未覆盖的组仍回落本地注册表 `src/lib/editors.ts`；
+  未覆盖的组仍回落本地注册表 `apps/config-console/src/lib/editors.ts`；
 - 禁用本地持久化与「重置」；加载 / 空 / 错误 / 403 / 401 均有独立状态页。
 
 令牌存放与安全：`sessionStorage`（关标签即失效），PKCE `S256` + `state` + `nonce` 校验，
@@ -185,13 +199,13 @@ VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
 ## 接口契约与任务
 
 - 管理面 API 契约：`D:/ws/autional/butler/plan/config-console/API.md`
-- 前端数据层：`src/lib/{config,auth,api,data,transfer}.ts`（`transfer.ts` = 导入/导出的纯逻辑层）
+- 前端数据层：`apps/config-console/src/lib/{config,auth,api,data,transfer}.ts`（`transfer.ts` = 导入/导出的纯逻辑层）
 
 ## 已定制的组
 
 服务端已 **seed 51 组**编辑器 schema（`shared/service-config/internal/editorsseed/seed.json`，
 启动期幂等写入 `config_editors`）。下表只列**最常见的 5 组**，完整清单见该 seed 文件；
-未 seed 的组回落本地注册表 `src/lib/editors.ts` 或默认表单。
+未 seed 的组回落本地注册表 `apps/config-console/src/lib/editors.ts` 或默认表单。
 
 | 域 | 组 |
 |---|---|
