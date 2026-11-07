@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:editors": "node --experimental-strip-types scripts/gen-editors-seed.ts"
+    "gen:editors": "node --experimental-strip-types scripts/gen-editors-seed.ts",
+    "check:editors-i18n": "node --experimental-strip-types scripts/check-editors-i18n.ts"
   },
   "dependencies": {
     "@autional/tailwind-preset": "0.1.0-rc.10",

@@ -168,5 +168,6 @@
   "changesets.rejected": "Rejected",
   "notFound.title": "Page not found",
   "notFound.description": "The link may be stale, or the group no longer exists.",
-  "notFound.back": "Back to overview"
+  "notFound.back": "Back to overview",
+  "common.masked": "Masked"
 }

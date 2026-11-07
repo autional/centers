@@ -4,18 +4,19 @@ import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { AppPageHeader, SectionCard } from '@autional/ui';
 import { editorOf, coveredKeys } from '@/lib/editors';
+import { localizeEditorText } from '@/lib/editor-i18n';
 import type { GroupEditor } from '@/lib/editors';
 import { groupEffective, servicesInGroup } from '@/lib/model';
 import type { Item } from '@/lib/model';
 import { store } from '@/lib/data';
-import { maskText } from '@/lib/reveal';
+import { isMasked } from '@/lib/reveal';
 import { useConfigData } from '../config-data';
 import { useWriteGate } from '@/hooks/use-write-gate';
 import { ItemModal } from '@/components/item-modal';
 import type { ItemModalState } from '@/components/item-modal';
 
 export default function GroupEditorPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { domain = '', group = '' } = useParams();
   const { items, reload } = useConfigData();
   const { requestWrite, node: writeNode } = useWriteGate(reload);
@@ -63,7 +64,7 @@ export default function GroupEditorPage() {
     <>
       <AppPageHeader
         title={group}
-        description={editor?.note || t('group.noEditorNote')}
+        description={localizeEditorText(editor?.note, i18n.language) || t('group.noEditorNote')}
         actions={
           <Space size={8} wrap>
             <Link to={`/domains/${encodeURIComponent(domain)}`} className="text-sm text-[var(--color-primary-600)]">
@@ -98,8 +99,8 @@ export default function GroupEditorPage() {
               return (
                 <div key={field.label} className="grid grid-cols-1 gap-2 py-3 sm:grid-cols-[220px_1fr_auto] sm:items-center">
                   <div>
-                    <div className="text-sm font-medium text-[var(--color-text-primary)]">{field.label}</div>
-                    {field.hint ? <div className="text-xs text-[var(--color-text-secondary)]">{field.hint}</div> : null}
+                    <div className="text-sm font-medium text-[var(--color-text-primary)]">{localizeEditorText(field.label, i18n.language)}</div>
+                    {field.hint ? <div className="text-xs text-[var(--color-text-secondary)]">{localizeEditorText(field.hint, i18n.language)}</div> : null}
                   </div>
                   <div className="min-w-0">
                     {secretKeys ? (
@@ -109,7 +110,7 @@ export default function GroupEditorPage() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <span className="break-all font-mono text-xs">{hit ? maskText({ value: hit.v, masked: hit.masked }) : '—'}</span>
+                        <span className="break-all font-mono text-xs">{hit ? (isMasked({ value: hit.v, masked: hit.masked }) ? t('common.masked') : hit.v) : '—'}</span>
                         {hit ? (
                           <Tag color={hit.src === 'override' ? 'blue' : hit.src === 'inherit' ? 'default' : 'default'}>
                             {hit.src === 'override' ? t('group.override') : hit.src === 'inherit' ? t('group.inherit') : t('group.base')}
@@ -163,7 +164,7 @@ export default function GroupEditorPage() {
             pagination={{ pageSize: 50, showSizeChanger: false }}
             columns={[
               { title: t('domains.col.key'), dataIndex: 'k', render: (v: string) => <code className="font-mono text-xs">{v}</code> },
-              { title: t('domains.col.value'), dataIndex: 'v', ellipsis: true, render: (v: string, row: Item) => <span className="font-mono text-xs">{maskText({ value: v, masked: row.masked })}</span> },
+              { title: t('domains.col.value'), dataIndex: 'v', ellipsis: true, render: (v: string, row: Item) => <span className="font-mono text-xs">{isMasked({ value: v, masked: row.masked }) ? t('common.masked') : v}</span> },
               {
                 title: t('domains.col.scope'),
                 width: 110,

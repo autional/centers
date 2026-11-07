@@ -18,17 +18,15 @@
 
 ## 明确未做（按优先级）
 
-### 1. 编辑器 schema 的全量英译（T-EDITORS）
+### 1. 编辑器 schema 的全量英译（T-EDITORS）—— ✅ 已完成
 
-- 现状：`src/lib/editors.ts` 的 584 label / 234 hint / 51 note 仍是中文；UI 外壳已双语。
-- 影响：`.com`（英文）下进入配置组，字段名仍是中文。
-- 方案（已论证，不需要改 Go）：
-  1. `editors.ts` 的 `label/hint/note` 改为 `{ zh, en }`（或并列 `labelEn`）；
-  2. **已落地**：`pnpm gen:editors [输出路径]`（`scripts/gen-editors-seed.ts`）从 `editors.ts`
-     生成 `shared/service-config/internal/editorsseed/seed.json`。已实测：生成结果与现有 seed.json
-     **逐字一致**（51 组）。服务端 `Schema` 是 `json.RawMessage`，不需要 DDL / Go 代码改动；
-  3. 渲染层按当前语言取值；`store.editor()` 返回的服务端 schema 同样按语言读取。
-- 关键词条 688 条（去重后），建议先做术语表（对齐 admin 的 `zh-CN.json` / `en-US.json`）。
+- 做法：不改 `editors.ts` 结构，新增 `src/lib/editor-i18n.ts`（688 条 `中文原文 → English`）。
+  渲染层用 `localizeEditorText(text, i18n.language)`；**api 模式**下服务端 `GET /editors`
+  返回的中文 label/hint 也会命中同一张表，不需要改 Go。
+- 覆盖率：**688 / 688**，`pnpm check:editors-i18n` 可随时复核；
+  `src/lib/editor-i18n.test.ts` 作为硬门禁（缺一条就红、多一条也红）。
+- seed 重生成：`pnpm gen:editors [路径]`（已实测与现有 seed 逐字一致）。
+- 说明：如果以后要「服务端直接下发英文」，把同一张表落到 seed 的 `label_en` 即可，前端已能按语言取。
 
 ### 2. 导入向导（ImportWizard）
 
