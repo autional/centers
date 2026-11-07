@@ -87,7 +87,7 @@ npm run test:watch
 | `VITE_ENV_LABEL` | 空 | 顶栏环境标签覆盖；空 = 按 hostname 推导（`localhost`/`127.0.0.1`/`*.local` → 本地，`config.autional.com`·`.cn` → 生产，其它取首段） |
 | `VITE_OIDC_AUTHORIZE` | `https://auth.autional.com/oauth/api/v1/oauth/authorize` | 授权端点（浏览器跳转） |
 | `VITE_OIDC_TOKEN` | `https://api.autional.com/bff/oauth/api/v1/oauth/token` | 令牌端点（换票/刷新）；**生产部署用同源 `/bff/oauth/api/v1/oauth/token`**，由 `vercel.ts` 代理，避免 CORS |
-| `VITE_OIDC_CLIENT_ID` | 空 | OAuth 客户端 ID（公开客户端，`is_confidential=false`）。当前环境用 `01AR0000000000000000000008`（Platform Console OAuth Client，已登记 config com/cn 回调） |
+| `VITE_OIDC_CLIENT_ID` | 空 | OAuth 客户端 ID（公开客户端，`is_confidential=false`）。当前用**独立客户端** `client-814189b5mthj`（Config Console OAuth Client，回调 config com/cn） |
 | `VITE_OIDC_REDIRECT_URI` | `${origin}/oauth/callback` | 回调地址；**必须与客户端登记的 `redirect_uris` 逐字一致**（无尾斜杠） |
 | `VITE_OIDC_SCOPE` | `openid profile email` | 授权范围 |
 
@@ -114,7 +114,7 @@ VITE_DATA_MODE=mock npm run build
 VITE_DATA_MODE=api
 VITE_AUTH_MODE=oidc
 VITE_REQUIRE_AUTH=1
-VITE_OIDC_CLIENT_ID=01AR0000000000000000000008
+VITE_OIDC_CLIENT_ID=client-814189b5mthj
 VITE_TENANT_ID=01KSQCBNVMS6SX64PJS937CE33
 VITE_OIDC_REDIRECT_URI=https://config.autional.com/oauth/callback
 VITE_OIDC_AUTHORIZE=https://auth.autional.com/oauth/api/v1/oauth/authorize
