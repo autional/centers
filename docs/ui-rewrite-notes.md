@@ -39,12 +39,17 @@
 
 - 通过导入向导的「存为变更单」创建草稿；列表/详情/发布/拒绝在同一页完成。
 
-### 4. 密钥中心（secret）复制重建
+### 4. 密钥中心（secret）复制重建 —— ✅ 已完成
 
-- 现状：`D:\ws\deploy-sync\secret` 已建（唯一可写副本 + `.refs/site-secret` + `autional-cn/sites/secret` 入口）。
-- 未做：按本次结构复制。建议等 config 在 Preview/生产验证一版后再动。
-- 备注：你提到「以后考虑直接在 admin 上实现」——admin 已有 `app/secrets/page.tsx` 落点，
-  动工前先定终态（独立站 / admin 内嵌 / 两者共存）。
+- `D:\ws\deploy-sync\secret`（分支 `feat/ui-rewrite`）已按同一结构重建：
+  pnpm workspace + `apps/secret-console` + AppShell + 令牌/主题 + i18n（125 条双语）。
+- 页面：概览（统计 / 按租户策略 / 运行状态）、密钥（筛选 / 分页 / 详情抽屉 / 版本历史 /
+  创建 / 轮换 / 改描述 / 吊销 / 删除 / 批量 / 查看明文）、审计（筛选 + 分页）。
+- 保留原有 CSP 与安全响应头；`vercel.ts` 改为 pnpm + `apps/secret-console/dist`。
+- 旧 hash 深链（`#/secrets?key=`、`#/audit`）已重定向到 history 路由。
+- 实测：3 个路由 + 深链抽屉，0 控制台错误；22 个单测、typecheck、build 全绿。
+- 注：config 里的 `secretCenterUrl()` 仍输出 `#/secrets?key=`；secret 已能兼容该形式，
+  但建议下一轮改成 `/secrets?key=` 并去掉重定向。
 
 ### 5. 设计系统门禁登记（M4）
 
