@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, App, Button, Empty, Popconfirm, Select, Space, Spin, Table, Tag } from 'antd';
+import { Alert, App, Button, Empty, Popconfirm, Select, Space, Spin, Tag } from 'antd';
 import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { AppPageHeader, SectionCard } from '@autional/ui';
+import { DataTable } from '@autional/ui/antd';
 import { editorOf, coveredKeys } from '@/lib/editors';
 import { localizeEditorText } from '@/lib/editor-i18n';
 import type { GroupEditor } from '@/lib/editors';
@@ -157,7 +158,7 @@ export default function GroupEditorPage() {
         {others.length === 0 ? (
           <Empty description={t('group.otherEmpty')} />
         ) : (
-          <Table
+          <DataTable
             size="small"
             rowKey={(row: Item) => `${row.s}|${row.k}`}
             dataSource={others}

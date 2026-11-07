@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, App, Button, Segmented, Space, Table, Tag } from 'antd';
+import { Alert, App, Button, Segmented, Space, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { AppPageHeader, SectionCard } from '@autional/ui';
-import { Drawer } from '@autional/ui/antd';
+import { Drawer, DataTable } from '@autional/ui/antd';
 import { CHANGESETS_PAGE_SIZE, buildChangesetQuery, canPublish, canReject, statusColor, statusLabel } from '@/lib/changesets';
 import type { ChangesetStatus } from '@/lib/api';
 import { getChangeset, listChangesets, publishChangeset, rejectChangeset } from '@/lib/api';
@@ -102,7 +102,7 @@ export default function ChangesetsPage() {
           </div>
           {error ? <Alert className="mb-3" type="error" showIcon title={error} /> : null}
           <SectionCard padding="none">
-            <Table
+            <DataTable
               size="small"
               rowKey="id"
               loading={loading}
@@ -168,7 +168,7 @@ export default function ChangesetsPage() {
               <Tag color={statusColor(detail.changeset.status)}>{statusLabel(detail.changeset.status)}</Tag>
               <span className="text-[var(--color-text-secondary)]">{t('changesets.reason')}：{detail.changeset.reason || '—'}</span>
             </div>
-            <Table
+            <DataTable
               size="small"
               rowKey={(row) => `${row.service_name}|${row.key}`}
               dataSource={detail.entries}

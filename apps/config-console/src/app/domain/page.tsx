@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Alert, App, Button, Input, Popconfirm, Segmented, Select, Space, Switch, Table, Tag } from 'antd';
+import { Alert, App, Button, Input, Popconfirm, Segmented, Select, Space, Switch, Tag } from 'antd';
 import { Plus } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { AppPageHeader, SectionCard } from '@autional/ui';
+import { DataTable } from '@autional/ui/antd';
 import { aggregate, isRule, itemId } from '@/lib/model';
 import type { Item, ItemType } from '@/lib/model';
 import { store } from '@/lib/data';
@@ -155,7 +156,7 @@ export default function DomainDetailPage() {
             </span>
           </div>
 
-          <Table
+          <DataTable
             size="small"
             rowKey={(row: any) => (single ? itemId(row.s, row.k) : row.k)}
             dataSource={rows as any[]}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
-import { Drawer } from '@autional/ui/antd';
+import { Alert, Button, Popconfirm, Space, Tag, Typography } from 'antd';
+import { Drawer, DataTable } from '@autional/ui/antd';
 import { useTranslation } from 'react-i18next';
 import { reveal as revealApi } from '@/lib/api';
 import { errorStatus, errorText, store } from '@/lib/data';
@@ -166,7 +166,7 @@ export function PlacementDrawer(props: {
               <div className="mb-2 text-sm font-semibold">
                 {t('placement.historyTitle', { scope: scopeLabel(history.item.s) })}
               </div>
-              <Table
+              <DataTable
                 size="small"
                 rowKey={(row) => String(row.revision)}
                 loading={history.loading}
