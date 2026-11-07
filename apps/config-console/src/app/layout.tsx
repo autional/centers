@@ -39,7 +39,7 @@ function Shell({ session, onLogout }: { session: ReturnType<typeof useSession>['
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { status, error, reload } = useConfigData();
+  const { status, error, reload, meta } = useConfigData();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -82,16 +82,30 @@ function Shell({ session, onLogout }: { session: ReturnType<typeof useSession>['
       }
       sidebarCollapsed={collapsed}
       nav={
-        <Menu
-          mode="inline"
-          selectedKeys={[selected === '/' ? '/' : selected]}
-          items={navItems}
-          className="border-r-0"
-          onClick={({ key }) => {
-            navigate(key);
-            setMobileOpen(false);
-          }}
-        />
+        <>
+          <Menu
+            mode="inline"
+            selectedKeys={[selected === '/' ? '/' : selected]}
+            items={navItems}
+            className="border-r-0"
+            onClick={({ key }) => {
+              navigate(key);
+              setMobileOpen(false);
+            }}
+          />
+          {collapsed ? null : (
+            <div className="mt-auto border-t border-[var(--color-border-subtle)] px-4 py-3 text-xs text-[var(--color-text-secondary)]">
+              <div className="mb-1 font-semibold text-[var(--color-text-primary)]">{t('sidebar.summary')}</div>
+              <div className="flex justify-between py-0.5"><span>{t('sidebar.items')}</span><b>{meta.total}</b></div>
+              <div className="flex justify-between py-0.5"><span>{t('sidebar.domains')}</span><b>{meta.domains.length}</b></div>
+              <div className="flex justify-between py-0.5">
+                <span>{t('sidebar.groups')}</span>
+                <b>{meta.domains.reduce((n, domain) => n + domain.groups.length, 0)}</b>
+              </div>
+              <div className="flex justify-between py-0.5"><span>{t('sidebar.services')}</span><b>{meta.services.length}</b></div>
+            </div>
+          )}
+        </>
       }
       headerLeft={
         <>

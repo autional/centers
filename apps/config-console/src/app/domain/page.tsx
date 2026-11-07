@@ -90,80 +90,64 @@ export default function DomainDetailPage() {
 
       <Alert className="mb-4" type="info" showIcon title={t('domains.inheritHint')} />
 
-      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <PageSection  className="self-start">
-          <div className="px-3 py-2 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
-            {t('domains.groupList')}
-          </div>
-          <ul>
-            <li>
-              <button
-                type="button"
-                className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
-                  group === '' ? 'bg-[var(--color-bg-muted)] font-semibold' : ''
-                }`}
-                onClick={() => setGroup('')}
-              >
-                <span>{t('domains.allGroups')}</span>
-                <span className="text-xs text-[var(--color-text-secondary)]">{detail?.count ?? 0}</span>
-              </button>
-            </li>
-            {detail?.groups.map((entry) => (
-              <li key={entry.name}>
-                <button
-                  type="button"
-                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
-                    group === entry.name ? 'bg-[var(--color-bg-muted)] font-semibold' : ''
-                  }`}
-                  onClick={() => setGroup(entry.name)}
-                >
-                  <span className="truncate">{entry.name}</span>
-                  <span className="text-xs text-[var(--color-text-secondary)]">{entry.count}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </PageSection>
+      {/* 配置组：横向 chip（原 220px 侧栏既占宽又大半空着） */}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <Button size="small" type={group === '' ? 'primary' : 'default'} onClick={() => setGroup('')}>
+          {t('domains.allGroups')}
+          <span className="ml-1 opacity-70">{detail?.count ?? 0}</span>
+        </Button>
+        {detail?.groups.map((entry) => (
+          <Button
+            key={entry.name}
+            size="small"
+            type={group === entry.name ? 'primary' : 'default'}
+            onClick={() => setGroup(entry.name)}
+          >
+            {entry.name}
+            <span className="ml-1 opacity-70">{entry.count}</span>
+          </Button>
+        ))}
+      </div>
 
-        <PageSection className="min-w-0">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Input.Search
-              allowClear
-              className="w-64"
-              placeholder={t('domains.search')}
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-            />
-            <Select
-              className="w-56"
-              value={service}
-              onChange={setService}
-              options={[
-                { value: 'all', label: t('domains.allServices') },
-                { value: '', label: t('domains.baseOnly') },
-                ...services.map((name) => ({ value: name, label: name })),
-              ]}
-            />
-            <Segmented
-              value={scope}
-              onChange={(value) => setScope(value as 'all' | 'base' | 'svc')}
-              options={[
-                { value: 'all', label: t('domains.scopeAll') },
-                { value: 'base', label: t('domains.scopeBase') },
-                { value: 'svc', label: t('domains.scopeSvc') },
-              ]}
-            />
-            <span className="flex items-center gap-2 text-sm">
-              <Switch size="small" checked={hideRules} onChange={setHideRules} />
-              {t('domains.hideRules')}
-            </span>
-            <div className="flex-1" />
-            {group ? (
-              <Link to={`/domains/${encodeURIComponent(domain)}/${encodeURIComponent(group)}`}>
-                <Button>{t('domains.editGroup')}</Button>
-              </Link>
-            ) : null}
-          </div>
+      <PageSection className="min-w-0">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Input.Search
+            allowClear
+            className="w-64"
+            placeholder={t('domains.search')}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />
+          <Select
+            className="w-56"
+            value={service}
+            onChange={setService}
+            options={[
+              { value: 'all', label: t('domains.allServices') },
+              { value: '', label: t('domains.baseOnly') },
+              ...services.map((name) => ({ value: name, label: name })),
+            ]}
+          />
+          <Segmented
+            value={scope}
+            onChange={(value) => setScope(value as 'all' | 'base' | 'svc')}
+            options={[
+              { value: 'all', label: t('domains.scopeAll') },
+              { value: 'base', label: t('domains.scopeBase') },
+              { value: 'svc', label: t('domains.scopeSvc') },
+            ]}
+          />
+          <span className="flex items-center gap-2 text-sm">
+            <Switch size="small" checked={hideRules} onChange={setHideRules} />
+            {t('domains.hideRules')}
+          </span>
+          <div className="flex-1" />
+          {group ? (
+            <Link to={`/domains/${encodeURIComponent(domain)}/${encodeURIComponent(group)}`}>
+              <Button>{t('domains.editGroup')}</Button>
+            </Link>
+          ) : null}
+        </div>
 
           <DataTable
             size="small"
@@ -241,8 +225,7 @@ export default function DomainDetailPage() {
                   ]
             }
           />
-        </PageSection>
-      </div>
+      </PageSection>
 
       {modal ? (
         <ItemModal

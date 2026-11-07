@@ -198,5 +198,10 @@
   "domains.editGroup": "Edit this group",
   "changes.allDomains": "All domains",
   "banner.demo": "Demo data: key names, hierarchy, and counts come from a real Config Center preflight (2,020 unique keys); values are masked. Edits are stored in your browser.",
-  "banner.api": "Connected to the live Config Center API ({{base}}): config:read to read, config:write with a reason to write, config:publish to roll back."
+  "banner.api": "Connected to the live Config Center API ({{base}}): config:read to read, config:write with a reason to write, config:publish to roll back.",
+  "sidebar.summary": "Summary",
+  "sidebar.items": "Items",
+  "sidebar.domains": "Domains",
+  "sidebar.groups": "Groups",
+  "sidebar.services": "Services"
 }
