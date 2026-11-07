@@ -126,7 +126,7 @@
   "placement.rollback": "回滚",
   "reveal.action": "查看明文",
   "reveal.title": "查看明文",
-  "reveal.description": "本次查看会写入审计（version_read），明文只在本页内存中显示。",
+  "reveal.description": "本次查看会写入审计（admin_reveal），明文只在本页内存中显示。",
   "reveal.forbidden": "需要 config:write 才能查看明文。",
   "reason.title": "变更原因",
   "reason.placeholder": "例：排查网关日志 / 上线新连接池参数",

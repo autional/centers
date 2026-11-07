@@ -126,7 +126,7 @@
   "placement.rollback": "Roll back",
   "reveal.action": "Reveal plaintext",
   "reveal.title": "Reveal plaintext",
-  "reveal.description": "This reveal is audited (version_read); the plaintext is shown only in this page's memory.",
+  "reveal.description": "This reveal is audited (admin_reveal); the plaintext is shown only in this page's memory.",
   "reveal.forbidden": "config:write is required to reveal plaintext.",
   "reason.title": "Reason for change",
   "reason.placeholder": "e.g. debugging gateway logs / rolling out new pool settings",
