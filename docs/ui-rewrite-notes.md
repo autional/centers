@@ -67,3 +67,21 @@
   secret 重写时同步改成 `/secrets?key=`。
 - **门户切换**：沿用 `lib/portal.ts`（不引 `@autional/shared` 的 auth store），行为与原实现一致。
 - **admin 入口**：本轮不加（按决定延后）。
+
+---
+
+## 继续做 secret 的最短路径
+
+`D:\ws\deploy-sync\secret` 已就绪（`apps/` 结构可照抄 config）：
+
+1. 复制骨架：`pnpm-workspace.yaml`、根 `package.json`、`vercel.ts`（改站点名与 output 目录）、
+   `apps/config-console/{package.json,index.html,postcss.config.mjs,tailwind.config.ts,tsconfig.json,tsconfig.node.json,vite.config.ts,vitest.config.ts}`。
+2. 复制 `src/main.tsx`、`src/App.tsx`、`src/app/layout.tsx`、`src/app/config-data.tsx`、
+   `src/hooks/*`、`src/components/{reason-modal,portal-menu}.tsx`、`src/i18n/*`、`src/styles/globals.css`。
+3. `src/lib/**` 用 secret 自己的（api/auth/portal/scope/config 已存在，**不要覆盖**）；
+   `src/lib/links.ts` 改成本站不需要（secret 就是密钥中心）。
+4. 页面按 secret 的 3 页重写：概览（统计 + 策略表单 + 加密密钥版本）、密钥（筛选/分页/详情抽屉/
+   创建/改描述/轮换/吊销/删除/批量）、审计（动作与租户筛选 + 分页）。
+5. 保留 `vercel.ts` 的 **CSP 全套响应头**（config 没有，secret 有，别丢）。
+6. 深链：config 的 `secretCenterUrl()` 现在指向 `#/secrets?key=`；secret 改为 history 路由后，
+   把这里同步改成 `/secrets?key=`。
