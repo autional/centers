@@ -193,5 +193,6 @@
   "import.action.update": "Update",
   "import.action.unchanged": "Unchanged",
   "import.action.invalid": "Invalid",
-  "import.action.skipped": "Skipped"
+  "import.action.skipped": "Skipped",
+  "changes.operator": "Operator"
 }
