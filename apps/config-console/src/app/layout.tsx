@@ -1,19 +1,42 @@
 import { useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
-import { Button, Menu } from 'antd';
+import { Button, Menu, Result, Spin, Tag, Tooltip } from 'antd';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { AppShell, LanguageSwitcher, PortalSwitcher, ThemeToggle } from '@autional/ui';
-import type { PortalLink } from '@autional/ui';
+import { AppShell, LanguageSwitcher, ThemeToggle, UserMenu } from '@autional/ui';
+import type { UserMenuItemSpec } from '@autional/ui';
+import { DATA_MODE, ENV_LABEL } from '@/lib/config';
+import { store } from '@/lib/data';
+import { SECRET_CENTER_URL } from '@/lib/links';
+import { useSession } from '@/hooks/use-session';
+import { ConfigDataProvider, useConfigData } from './config-data';
+import { PortalMenu } from '@/components/portal-menu';
+import { LoginPage } from './login/page';
 
-/**
- * 应用外壳：结构（侧栏 / sticky 顶栏 / 移动端抽屉 / 内容面板）全部由设计系统的 AppShell 提供，
- * 本站只提供内容——品牌、菜单、右上角控件。顶栏高度因此来自 --layout-header-height。
- */
 export default function Layout() {
+  const { ready, session, error, needsLogin, login, logout } = useSession();
+
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spin size="large" />
+      </div>
+    );
+  }
+  if (needsLogin) return <LoginPage error={error} onLogin={() => void login()} />;
+
+  return (
+    <ConfigDataProvider enabled>
+      <Shell session={session} onLogout={logout} />
+    </ConfigDataProvider>
+  );
+}
+
+function Shell({ session, onLogout }: { session: ReturnType<typeof useSession>['session']; onLogout: () => Promise<void> }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const { status, error, reload } = useConfigData();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -27,24 +50,20 @@ export default function Layout() {
     [t],
   );
 
-  // 二级路径（/domains/foo）仍高亮一级项
   const selected = '/' + (location.pathname.split('/')[1] ?? '');
-  const selectedKey = selected === '/' ? '/' : selected;
-
-  // 门户目录在 M2 接入（lib/portal.ts 已有实现，改为喂给 PortalSwitcher）；
-  // 现在传空数组：PortalSwitcher 在 ≤1 个门户时不渲染，不会出现空按钮。
-  const portals: PortalLink[] = [];
+  const userItems: UserMenuItemSpec[] = [
+    { key: 'secret', type: 'custom', label: t('nav.secretCenter'), href: SECRET_CENTER_URL },
+    { key: 'logout', type: 'logout', onClick: () => void onLogout() },
+  ];
 
   return (
     <AppShell
-      brand={
-        <span className="truncate text-lg font-bold">{collapsed ? 'A' : t('app.brand')}</span>
-      }
+      brand={<span className="truncate text-lg font-bold">{collapsed ? 'A' : t('app.brand')}</span>}
       sidebarCollapsed={collapsed}
       nav={
         <Menu
           mode="inline"
-          selectedKeys={[selectedKey]}
+          selectedKeys={[selected === '/' ? '/' : selected]}
           items={navItems}
           className="border-r-0"
           onClick={({ key }) => {
@@ -74,16 +93,53 @@ export default function Layout() {
       }
       headerRight={
         <>
-          <PortalSwitcher portals={portals} currentPortal="config" />
+          <Tooltip title={t('header.envHint')}>
+            <Tag color="green">{ENV_LABEL}</Tag>
+          </Tooltip>
+          <Tag color={store.localWrites ? 'default' : 'blue'}>
+            {store.localWrites ? t('header.demoMode') : t('header.apiMode')}
+          </Tag>
+          <PortalMenu session={session} />
           <LanguageSwitcher />
           <ThemeToggle />
+          <UserMenu
+            user={
+              session
+                ? { displayName: session.user.name, email: session.user.email, username: session.user.email }
+                : null
+            }
+            items={userItems}
+          />
         </>
       }
       mobileOpen={mobileOpen}
       onMobileClose={() => setMobileOpen(false)}
       closeLabel={t('nav.closeMenu')}
     >
-      <Outlet />
+      {status === 'loading' || status === 'idle' ? (
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <Spin size="large" />
+        </div>
+      ) : status !== 'ready' ? (
+        <Result
+          status={status === 'error' ? 'error' : status === 'forbidden' ? '403' : 'warning'}
+          title={
+            status === 'forbidden'
+              ? t('console.forbiddenTitle')
+              : status === 'unauthorized'
+                ? t('console.unauthorizedTitle')
+                : t('console.errorTitle')
+          }
+          subTitle={error || (status === 'forbidden' ? t('console.forbiddenHint') : '')}
+          extra={
+            <Button type="primary" onClick={() => void reload()}>
+              {t('common.retry')}
+            </Button>
+          }
+        />
+      ) : (
+        <Outlet />
+      )}
     </AppShell>
   );
 }
