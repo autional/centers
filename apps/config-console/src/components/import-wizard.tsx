@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Alert, App, Button, Checkbox, Input, Table, Tag, Upload } from 'antd';
+import { Alert, App, Button, Checkbox, Input, Tag, Upload } from 'antd';
 import { Upload as UploadIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Modal } from '@autional/ui/antd';
+import { Modal, DataTable } from '@autional/ui/antd';
 import { createChangeset } from '@/lib/api';
 import type { ImportPreviewResult } from '@/lib/api';
 import { errorText, store } from '@/lib/data';
@@ -175,7 +175,7 @@ export function ImportWizard({ open, onClose, onDone }: { open: boolean; onClose
           <Checkbox checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)}>
             {t('import.replaceExisting')}
           </Checkbox>
-          <Table
+          <DataTable
             size="small"
             rowKey={(row) => `${row.service_name}|${row.key}`}
             dataSource={preview?.items ?? []}

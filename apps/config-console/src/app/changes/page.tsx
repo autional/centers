@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Input, Select, Table, Tooltip } from 'antd';
+import { Alert, Input, Select, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { AppPageHeader, SectionCard } from '@autional/ui';
+import { DataTable } from '@autional/ui/antd';
 import { CHANGES_PAGE_SIZE, buildChangesQuery, normalizeChanges, toChangeRow } from '@/lib/changes';
 import type { ChangeRow } from '@/lib/changes';
 import { changes as fetchChanges } from '@/lib/api';
@@ -94,7 +95,7 @@ export default function ChangesPage() {
           </div>
           {error ? <Alert className="mb-3" type="error" showIcon title={error} /> : null}
           <SectionCard padding="none">
-            <Table
+            <DataTable
               size="small"
               rowKey="id"
               loading={loading}
