@@ -11,6 +11,5 @@ export const SECRET_CENTER_URL = (() => {
 
 /** 深链：密钥中心按 key 直接打开详情（只传键名，不传值）。 */
 export function secretCenterUrl(key?: string): string {
-  // 密钥中心当前仍是 hash 路由；待其重写为 BrowserRouter 后改为 `/secrets?key=`
-  return key ? `${SECRET_CENTER_URL}/#/secrets?key=${encodeURIComponent(key)}` : SECRET_CENTER_URL;
+  return key ? `${SECRET_CENTER_URL}/secrets?key=${encodeURIComponent(key)}` : SECRET_CENTER_URL;
 }

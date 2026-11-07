@@ -30,5 +30,8 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Editors i18n coverage
+        run: pnpm --filter @autional/config-console check:editors-i18n
+
       - name: Typecheck + build
         run: pnpm build
