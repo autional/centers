@@ -1,16 +1,19 @@
+import { useState } from 'react';
 import { App, Button, Card, Popconfirm, Space, Statistic, Tag } from 'antd';
-import { Download, RotateCcw } from 'lucide-react';
+import { Download, RotateCcw, Upload } from 'lucide-react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { AppPageHeader, SectionCard } from '@autional/ui';
 import { store } from '@/lib/data';
 import { downloadText, exportFilename } from '@/lib/transfer';
 import { useConfigData } from './config-data';
+import { ImportWizard } from '@/components/import-wizard';
 
 export default function OverviewPage() {
   const { t } = useTranslation();
   const { message } = App.useApp();
   const { meta, reload, reset } = useConfigData();
+  const [importing, setImporting] = useState(false);
 
   const doExport = async (format: 'json' | 'yaml') => {
     try {
@@ -44,6 +47,9 @@ export default function OverviewPage() {
             </Button>
             <Button icon={<Download size={14} />} onClick={() => void doExport('yaml')}>
               YAML
+            </Button>
+            <Button icon={<Upload size={14} />} onClick={() => setImporting(true)}>
+              {t('import.title')}
             </Button>
             {store.canReset ? (
               <Popconfirm
@@ -117,6 +123,8 @@ export default function OverviewPage() {
           })}
         </div>
       </SectionCard>
+
+      <ImportWizard open={importing} onClose={() => setImporting(false)} onDone={reload} />
 
       <SectionCard title={t('overview.structureTitle')}>
         <ol className="list-decimal space-y-2 pl-5 text-sm text-[var(--color-text-secondary)]">
