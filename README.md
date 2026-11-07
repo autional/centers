@@ -166,6 +166,22 @@ VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
   `shared/infra-ops/docker/allowlist-seed.json`（服务 → 可读密钥键）。数据源不可达时显示
   `source=unavailable`（不伪造消费方）；mock 模式显示按本机条目的演示占位。
 
+## 敏感值遮罩与查看明文
+
+- 服务端对命中「密钥门禁」的配置项（键名/值级判定，与导出同一套规则）在读面统一返回 `••••••`，
+  并带 `masked=true`：列表、单条、生效值、历史与变更流一致，**不能从历史绕过**。
+- 需要看真值时：配置项抽屉 →「查看明文」→ 填写原因（1–200 字）→ `POST /reveal`。
+  - 需要 `config:write`；每次查看写审计 `admin_reveal`（只记 md5/长度，不记明文）。
+  - 明文只放内存（模块级 Map），关抽屉即清；不写 localStorage / sessionStorage。
+- 编辑遮罩项前必须先查看明文，避免把占位值写回（后端也会拒绝 `••••••` 写入）。
+
+## 变更单（CC-04）
+
+- 入口：顶栏「变更单」→ `#/changesets`；或导入预览里的「存为变更单」。
+- 流程：建草稿（不写入 `config_items`）→ 详情核对 → 发布（逐条应用、回填 `config_versions.changeset_id`）
+  或拒绝（留原因）。只有 `draft` 可操作；发布失败保持草稿，重试同值幂等。
+- 权限：建单/拒绝需 `config:write`，发布需 `config:publish`。
+
 ## 接口契约与任务
 
 - 管理面 API 契约：`D:/ws/autional/butler/plan/config-console/API.md`
@@ -191,8 +207,9 @@ VITE_OIDC_TOKEN=/bff/oauth/api/v1/oauth/token
 
 ## 后续
 
-- CC-07/CC-08 已完成：数据层抽象（mock / api）+ OIDC 登录；CC-12 已完成：导出 / 导入向导 / 影响面。
-  后续是变更单（草稿 / 发布 / 审批）。
+- CC-07/CC-08 已完成：数据层抽象（mock / api）+ OIDC 登录；CC-12：导出 / 导入向导 / 影响面；
+  CC-04：变更单（草稿 / 发布 / 拒绝）；读面遮罩 + 显式查看明文。
+- 后续候选：草稿编辑、删除类变更条目、变更单保留期与 GDPR 擦除、前端代码分割（当前单包 >1.5 MB）。
 - 接口契约与任务拆分见 `D:/ws/autional/butler/plan/config-console/`。
 
 ## 约定
