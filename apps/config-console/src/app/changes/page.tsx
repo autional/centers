@@ -17,6 +17,7 @@ export default function ChangesPage() {
   const { t } = useTranslation();
   const { meta } = useConfigData();
   const [service, setService] = useState('');
+  const [domain, setDomain] = useState('');
   const [prefix, setPrefix] = useState('');
   const [operator, setOperator] = useState('');
   const [range, setRange] = useState<[string, string] | null>(null);
@@ -34,6 +35,7 @@ export default function ChangesPage() {
       const query = buildChangesQuery(
         {
           service_name: service || undefined,
+          domain: domain || undefined,
           key_prefix: prefix || undefined,
           created_by: operator || undefined,
           from: range ? new Date(range[0]) : null,
@@ -52,7 +54,7 @@ export default function ChangesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, prefix, service, operator, range]);
+  }, [page, prefix, service, domain, operator, range]);
 
   useEffect(() => {
     void load();
@@ -95,6 +97,17 @@ export default function ChangesPage() {
                 { value: '', label: t('changes.allServices') },
                 ...meta.services.map((name) => ({ value: name, label: name })),
               ]}
+            />
+            <Select
+              className="w-44"
+              value={domain}
+              onChange={(value) => {
+                setDomain(value ?? '');
+                setPage(1);
+              }}
+              allowClear
+              placeholder={t('changes.allDomains')}
+              options={meta.domains.map((item) => ({ value: item.name, label: item.name }))}
             />
             <Input.Search
               className="w-64"

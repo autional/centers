@@ -155,6 +155,12 @@ export default function DomainDetailPage() {
               <Switch size="small" checked={hideRules} onChange={setHideRules} />
               {t('domains.hideRules')}
             </span>
+            <div className="flex-1" />
+            {group ? (
+              <Link to={`/domains/${encodeURIComponent(domain)}/${encodeURIComponent(group)}`}>
+                <Button>{t('domains.editGroup')}</Button>
+              </Link>
+            ) : null}
           </div>
 
           <DataTable

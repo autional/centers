@@ -194,5 +194,7 @@
   "import.action.unchanged": "不变",
   "import.action.invalid": "非法",
   "import.action.skipped": "跳过",
-  "changes.operator": "操作人"
+  "changes.operator": "操作人",
+  "domains.editGroup": "编辑该组",
+  "changes.allDomains": "全部配置域"
 }

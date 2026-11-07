@@ -194,5 +194,7 @@
   "import.action.unchanged": "Unchanged",
   "import.action.invalid": "Invalid",
   "import.action.skipped": "Skipped",
-  "changes.operator": "Operator"
+  "changes.operator": "Operator",
+  "domains.editGroup": "Edit this group",
+  "changes.allDomains": "All domains"
 }
