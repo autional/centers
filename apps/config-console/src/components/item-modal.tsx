@@ -4,7 +4,7 @@ import { Modal } from '@autional/ui/antd';
 import { useTranslation } from 'react-i18next';
 import type { Item, ItemType, Scope } from '@/lib/model';
 import { scopeLabel } from '@/lib/model';
-import { MASK_TEXT, RevealCache, isMasked } from '@/lib/reveal';
+import { RevealCache, isMasked } from '@/lib/reveal';
 
 export type ItemModalState = {
   mode: 'add' | 'edit';
@@ -34,9 +34,9 @@ export function ItemModal(props: {
     form.setFieldsValue({
       ...state.item,
       k: state.item.k || state.suggestedKey || '',
-      v: cached ?? (valueLocked ? MASK_TEXT : state.item.v),
+      v: cached ?? (valueLocked ? t('common.masked') : state.item.v),
     });
-  }, [form, state, cached, valueLocked]);
+  }, [form, state, cached, valueLocked, t]);
 
   return (
     <Modal

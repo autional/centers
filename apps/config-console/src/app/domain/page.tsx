@@ -12,7 +12,7 @@ import { useWriteGate } from '@/hooks/use-write-gate';
 import { ItemModal } from '@/components/item-modal';
 import type { ItemModalState } from '@/components/item-modal';
 import { PlacementDrawer } from '@/components/placement-drawer';
-import { maskText } from '@/lib/reveal';
+import { isMasked } from '@/lib/reveal';
 
 const TYPE_TAG: Record<ItemType, string> = { int: 'blue', bool: 'green', yaml: 'orange', scalar: 'default' };
 
@@ -166,7 +166,7 @@ export default function DomainDetailPage() {
                 ? [
                     { title: t('domains.col.key'), dataIndex: 'k', width: '32%', render: (v: string) => <code className="font-mono text-xs">{v}</code> },
                     { title: t('domains.col.group'), dataIndex: 'g', width: 140 },
-                    { title: t('domains.col.value'), dataIndex: 'v', ellipsis: true, render: (v: string) => <span className="font-mono text-xs">{maskText({ value: v })}</span> },
+                    { title: t('domains.col.value'), dataIndex: 'v', ellipsis: true, render: (v: string, row: Item) => <span className="font-mono text-xs">{isMasked({ value: v, masked: row.masked }) ? t('common.masked') : v}</span> },
                     { title: t('domains.col.type'), dataIndex: 't', width: 80, render: (v: ItemType) => <Tag color={TYPE_TAG[v]}>{v}</Tag> },
                     {
                       title: t('domains.col.actions'),
@@ -207,7 +207,7 @@ export default function DomainDetailPage() {
                       ellipsis: true,
                       render: (v: string, row: any) => (
                         <Space size={6}>
-                          <span className="font-mono text-xs">{maskText({ value: v })}</span>
+                          <span className="font-mono text-xs">{isMasked({ value: v, masked: row.masked }) ? t('common.masked') : v}</span>
                           {row.distinct > 1 ? <Tag color="blue">{t('domains.distinct', { count: row.distinct })}</Tag> : null}
                         </Space>
                       ),
