@@ -403,6 +403,7 @@ function Console() {
         </Space>
       </Layout.Header>
       <Layout.Content className="wrap">
+        <EnglishNotice />
         <Alert
           className="banner"
           type={store.localWrites ? 'warning' : 'info'}
@@ -641,6 +642,7 @@ function LoginPage({ error, onLogin }: { error: string; onLogin: () => void }) {
             <span className="mark">A</span>
             <span>配置中心</span>
           </div>
+          <EnglishNotice />
           <h1 className="page">登录后管理配置</h1>
           <p className="desc">管理面 API 需要 JWT：读取需 config:read，写入需 config:write，回滚需 config:publish。</p>
           {error ? <Alert className="banner" type="error" showIcon message={error} /> : null}
@@ -655,6 +657,21 @@ function LoginPage({ error, onLogin }: { error: string; onLogin: () => void }) {
         </Card>
       </div>
     </Layout>
+  );
+}
+
+function EnglishNotice() {
+  if (typeof window === 'undefined' || !window.location.hostname.endsWith('.com')) return null;
+  return (
+    <div lang="en">
+      <Alert
+        className="banner"
+        type="info"
+        showIcon
+        message="This console is currently available in Chinese only."
+        description="An English UI is planned. Configuration and audit content are shown in Chinese."
+      />
+    </div>
   );
 }
 
