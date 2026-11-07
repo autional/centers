@@ -1,10 +1,8 @@
 import { routes, type Rewrite, type VercelConfig } from '@vercel/config/v1';
 
 /**
- * 配置中心控制台（com / cn 双区）的 Vercel 配置。
- *
- * 与 `sites/platform` 同构：`API_ORIGIN` 由 Vercel 项目环境变量注入，
- * com 项目 = https://api.autional.com，cn 项目 = https://api.autional.cn。
+ * 配置中心（com / cn 双区）的 Vercel 配置。
+ * `API_ORIGIN` 由 Vercel 项目环境变量注入：com = https://api.autional.com，cn = https://api.autional.cn。
  * 未设置时 **fail-closed**（避免静默把 cn 流量打到 com API）。
  */
 const rawOrigin = process.env.API_ORIGIN;
@@ -23,9 +21,9 @@ const spaFallback: Rewrite = {
 
 export const config: VercelConfig = {
   framework: 'vite',
-  installCommand: 'npm ci',
-  buildCommand: 'npm run build',
-  outputDirectory: 'dist',
+  installCommand: 'pnpm install --frozen-lockfile',
+  buildCommand: 'pnpm --filter @autional/config-console build',
+  outputDirectory: 'apps/config-console/dist',
   rewrites: [
     routes.rewrite('/bff/:path*', `${ORIGIN}/bff/:path*`),
     routes.rewrite('/oauth/callback', '/index.html'),
