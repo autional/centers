@@ -181,3 +181,10 @@ secret / secrets / audit / secrets?key=…（深链直接开抽屉）
 
 - 两站都用 `<ErrorBoundary>` 包住路由：渲染异常不再白屏（DS 组件，文案随 `<html lang>`）。
 - secret 的 `ThemeProvider storageKey` 已从 `config-console-theme` 改为 `secret-console-theme`。
+
+### 收尾补齐（2026-11-07 末）
+
+- config「变更记录」补齐 **操作人** 与 **日期区间** 筛选（对齐旧版能力）。
+- secret 明文 **30 秒自动隐藏**；关闭抽屉同时清除（与 README 安全口径一致）。
+- secret 概览增加 **API 连通徽标**（`checkApi`，仅 api 模式）。
+- secret `security_admin`（且非 super_admin/admin）时 **写入入口禁用**，服务端仍兜底 403。
