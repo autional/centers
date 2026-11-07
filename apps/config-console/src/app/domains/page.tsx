@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { AppPageHeader, SectionCard } from '@autional/ui';
+import { AppPageHeader } from '@autional/ui';
+import { PageSection } from '@/components/page-section';
 import { useConfigData } from '../config-data';
 
 /** 配置域索引：域只用于导航与统计，编辑入口在组。 */
@@ -11,7 +12,7 @@ export default function DomainIndexPage() {
   return (
     <>
       <AppPageHeader title={t('domains.title')} description={t('domains.description')} />
-      <SectionCard padding="none">
+      <PageSection >
         <ul className="divide-y divide-[var(--color-border-subtle)]">
           {meta.domains.map((domain) => (
             <li key={domain.name}>
@@ -38,7 +39,7 @@ export default function DomainIndexPage() {
             </li>
           ))}
         </ul>
-      </SectionCard>
+      </PageSection>
     </>
   );
 }

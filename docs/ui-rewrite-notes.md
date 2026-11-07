@@ -210,3 +210,15 @@ https://cn-secret-git-feat-ui-rewrite-jd7438716-gmailcoms-projects.vercel.app
 
 自动化冒烟被 SSO 挡在 Vercel 登录页（HTTP 200 + `Login – Vercel`），因此 **Preview 的页面级确认需要人工登录看一眼**；
 本地生产构建的 9 路由 headless 冒烟已全绿（见上）。
+
+---
+
+## 上线后修复（用户反馈，2026-11-07）
+
+| # | 现象 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | 配置中心「切换门户」可选项偏少 | 目录只查了**会话租户**；非平台上下文拿到的条目少 | 先查**平台租户**注册表取全量，失败再用会话租户兜底；可见性仍按会话租户 + 角色过滤 |
+| 2/4 | `/oauth/callback` 显示 404；刷新后提示「回调缺少 code 参数」 | 换票后只做了 `history.replaceState`（不通知 Router）；且无 code 也当成回调 | 改用 `navigate('/', { replace: true })`；只有带 `code` 才换票；无 code 直接清路径并按已有会话恢复 |
+| 3 | 顶栏出现 `header.namespace` | `t(key, { ns })` 里的 **`ns` 是 i18next 保留字段**，被当成命名空间 | 插值变量改名 `namespace`，文案改 `ns: {{namespace}}` |
+| 5 | 用户显示「已 已登录用户」；下拉里的平台跳转多余 | JWT 无 name/email 时回落固定中文；UserMenu 与门户切换重复 | 展示名回落 `…<sub 尾段>`；UserMenu 只保留退出登录 |
+| 6 | 页面「哪哪都怪」 | AppShell 已是白色面板，页面又套 `SectionCard` → **卡片套卡片** | 新增无边框 `PageSection` 替换全部 `SectionCard`；补品牌标与面包屑；修空 placeholder 的下拉 |

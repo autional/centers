@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, App, Button, Empty, Popconfirm, Select, Space, Spin, Tag } from 'antd';
 import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { AppPageHeader, SectionCard } from '@autional/ui';
+import { AppPageHeader } from '@autional/ui';
+import { PageSection } from '@/components/page-section';
 import { DataTable } from '@autional/ui/antd';
 import { editorOf, coveredKeys } from '@/lib/editors';
 import { localizeEditorText } from '@/lib/editor-i18n';
@@ -92,7 +93,7 @@ export default function GroupEditorPage() {
           <Spin />
         </div>
       ) : editor ? (
-        <SectionCard className="mb-4">
+        <PageSection className="mb-4">
           <div className="divide-y divide-[var(--color-border-subtle)]">
             {editor.fields.map((field) => {
               const hit = resolveField(field.keys);
@@ -151,10 +152,10 @@ export default function GroupEditorPage() {
               );
             })}
           </div>
-        </SectionCard>
+        </PageSection>
       ) : null}
 
-      <SectionCard title={t('group.otherItems', { count: others.length })}>
+      <PageSection title={t('group.otherItems', { count: others.length })}>
         {others.length === 0 ? (
           <Empty description={t('group.otherEmpty')} />
         ) : (
@@ -190,7 +191,7 @@ export default function GroupEditorPage() {
             ]}
           />
         )}
-      </SectionCard>
+      </PageSection>
 
       {modal ? (
         <ItemModal

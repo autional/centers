@@ -5,6 +5,7 @@ import type { PortalLink } from '@autional/ui';
 import type { Session } from '@/lib/auth';
 import {
   CURRENT_PORTAL_CODE,
+  PLATFORM_TENANT_ID,
   buildPortalUrl,
   fallbackPlatformUrl,
   fetchPortals,
@@ -39,14 +40,26 @@ export function PortalMenu({ session }: { session: Session | null }) {
     setState({ loading: true, degraded: false, portals: [] });
     void (async () => {
       try {
-        const rows = await fetchPortals({
-          tenantId: resolveTenantId(session?.user.tenantId),
-          accessToken: token,
-          signal: controller.signal,
-        });
+        const sessionTenant = resolveTenantId(session?.user.tenantId);
+        // 目录是「平台门户注册表」：先按平台租户取全量，失败再用会话租户兜底。
+        // 之前只查会话租户，导致非平台上下文里可选门户明显偏少。
+        const candidates = [...new Set([PLATFORM_TENANT_ID, sessionTenant])];
+        let rows: PortalApplication[] = [];
+        let lastError: unknown = null;
+        for (const tenantId of candidates) {
+          try {
+            rows = await fetchPortals({ tenantId, accessToken: token, signal: controller.signal });
+            lastError = null;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        if (lastError) throw lastError;
         if (!alive) return;
+        // 可见性仍按「会话租户 + 角色」判定：platform 只对平台成员显示
         const visible = filterPortals(rows, {
-          tenantId: resolveTenantId(session?.user.tenantId),
+          tenantId: sessionTenant,
           roles: session?.user.roles,
         })
           .slice()

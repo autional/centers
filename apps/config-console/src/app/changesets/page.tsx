@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, App, Button, Segmented, Space, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { AppPageHeader, SectionCard } from '@autional/ui';
+import { AppPageHeader } from '@autional/ui';
+import { PageSection } from '@/components/page-section';
 import { Drawer, DataTable } from '@autional/ui/antd';
 import { CHANGESETS_PAGE_SIZE, buildChangesetQuery, canPublish, canReject, statusColor, statusLabel } from '@/lib/changesets';
 import type { ChangesetStatus } from '@/lib/api';
@@ -101,7 +102,7 @@ export default function ChangesetsPage() {
             />
           </div>
           {error ? <Alert className="mb-3" type="error" showIcon title={error} /> : null}
-          <SectionCard padding="none">
+          <PageSection >
             <DataTable
               size="small"
               rowKey="id"
@@ -135,7 +136,7 @@ export default function ChangesetsPage() {
                 },
               ]}
             />
-          </SectionCard>
+          </PageSection>
         </>
       )}
 

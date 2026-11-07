@@ -3,7 +3,8 @@ import { App, Button, Card, Popconfirm, Space, Statistic, Tag } from 'antd';
 import { Download, RotateCcw, Upload } from 'lucide-react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { AppPageHeader, SectionCard } from '@autional/ui';
+import { AppPageHeader } from '@autional/ui';
+import { PageSection } from '@/components/page-section';
 import { store } from '@/lib/data';
 import { downloadText, exportFilename } from '@/lib/transfer';
 import { useConfigData } from './config-data';
@@ -76,7 +77,7 @@ export default function OverviewPage() {
         ))}
       </div>
 
-      <SectionCard title={t('overview.domainsTitle')} className="mb-6">
+      <PageSection title={t('overview.domainsTitle')} className="mb-6">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {meta.domains.map((domain) => {
             const pct = domain.count ? Math.round((domain.base / domain.count) * 100) : 0;
@@ -122,18 +123,18 @@ export default function OverviewPage() {
             );
           })}
         </div>
-      </SectionCard>
+      </PageSection>
 
       <ImportWizard open={importing} onClose={() => setImporting(false)} onDone={reload} />
 
-      <SectionCard title={t('overview.structureTitle')}>
+      <PageSection title={t('overview.structureTitle')}>
         <ol className="list-decimal space-y-2 pl-5 text-sm text-[var(--color-text-secondary)]">
           <li>{t('overview.structure.domain')}</li>
           <li>{t('overview.structure.group')}</li>
           <li>{t('overview.structure.item')}</li>
           <li>{t('overview.structure.effective')}</li>
         </ol>
-      </SectionCard>
+      </PageSection>
     </>
   );
 }

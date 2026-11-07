@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router';
+import { Link, Navigate, Outlet, useLocation, useNavigate } from 'react-router';
 import { Button, Menu, Result, Spin, Tag, Tooltip } from 'antd';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -7,7 +7,6 @@ import { AppShell, LanguageSwitcher, ThemeToggle, UserMenu } from '@autional/ui'
 import type { UserMenuItemSpec } from '@autional/ui';
 import { DATA_MODE, ENV_LABEL } from '@/lib/config';
 import { store } from '@/lib/data';
-import { SECRET_CENTER_URL } from '@/lib/links';
 import { useSession } from '@/hooks/use-session';
 import { ConfigDataProvider, useConfigData } from './config-data';
 import { PortalMenu } from '@/components/portal-menu';
@@ -22,6 +21,10 @@ export default function Layout() {
         <Spin size="large" />
       </div>
     );
+  }
+  // 兜底：任何模式下停在 /oauth/callback（例如 mock 模式手动访问）都回首页
+  if (typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '') === '/oauth/callback') {
+    return <Navigate to="/" replace />;
   }
   if (needsLogin) return <LoginPage error={error} onLogin={() => void login()} />;
 
@@ -51,14 +54,32 @@ function Shell({ session, onLogout }: { session: ReturnType<typeof useSession>['
   );
 
   const selected = '/' + (location.pathname.split('/')[1] ?? '');
-  const userItems: UserMenuItemSpec[] = [
-    { key: 'secret', type: 'custom', label: t('nav.secretCenter'), href: SECRET_CENTER_URL },
-    { key: 'logout', type: 'logout', onClick: () => void onLogout() },
-  ];
+
+  // 面包屑：只到「域 / 组」两级，够定位且不占地方
+  const crumbs = useMemo(() => {
+    const parts = location.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    if (parts.length === 0) return [];
+    if (parts[0] === 'domains') {
+      const list = [{ label: t('nav.domains'), to: '/domains' }];
+      if (parts[1]) list.push({ label: parts[1], to: `/domains/${encodeURIComponent(parts[1])}` });
+      if (parts[2]) list.push({ label: parts[2], to: location.pathname });
+      return list;
+    }
+    if (parts[0] === 'changes') return [{ label: t('nav.changes'), to: '/changes' }];
+    if (parts[0] === 'changesets') return [{ label: t('nav.changesets'), to: '/changesets' }];
+    return [];
+  }, [location.pathname, t]);
+  // 跨站入口交给顶栏的门户切换（PortalSwitcher），UserMenu 只保留退出登录，避免同一跳转出现两次
+  const userItems: UserMenuItemSpec[] = [{ key: 'logout', type: 'logout', onClick: () => void onLogout() }];
 
   return (
     <AppShell
-      brand={<span className="truncate text-lg font-bold">{collapsed ? 'A' : t('app.brand')}</span>}
+      brand={
+        <span className="flex min-w-0 items-center gap-2">
+          <img src="/favicon.svg" alt="" className="h-6 w-6 shrink-0 rounded" />
+          {collapsed ? null : <span className="truncate text-lg font-bold">{t('app.brand')}</span>}
+        </span>
+      }
       sidebarCollapsed={collapsed}
       nav={
         <Menu
@@ -89,6 +110,7 @@ function Shell({ session, onLogout }: { session: ReturnType<typeof useSession>['
             aria-label={collapsed ? t('header.expand') : t('header.collapse')}
             aria-expanded={!collapsed}
           />
+          <Breadcrumb crumbs={crumbs} />
         </>
       }
       headerRight={
@@ -141,5 +163,26 @@ function Shell({ session, onLogout }: { session: ReturnType<typeof useSession>['
         <Outlet />
       )}
     </AppShell>
+  );
+}
+
+
+function Breadcrumb({ crumbs }: { crumbs: Array<{ label: string; to: string }> }) {
+  if (crumbs.length === 0) return null;
+  return (
+    <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1 text-sm text-[var(--color-text-secondary)] md:flex">
+      {crumbs.map((crumb, index) => (
+        <span key={`${crumb.to}-${index}`} className="flex min-w-0 items-center gap-1">
+          {index > 0 ? <span className="text-[var(--color-text-muted)]">/</span> : null}
+          {index === crumbs.length - 1 ? (
+            <span className="truncate text-[var(--color-text-primary)]">{crumb.label}</span>
+          ) : (
+            <Link to={crumb.to} className="truncate hover:text-[var(--color-text-primary)]">
+              {crumb.label}
+            </Link>
+          )}
+        </span>
+      ))}
+    </nav>
   );
 }

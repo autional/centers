@@ -3,7 +3,8 @@ import { Alert, App, Button, Input, Popconfirm, Segmented, Select, Space, Switch
 import { Plus } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { AppPageHeader, SectionCard } from '@autional/ui';
+import { AppPageHeader } from '@autional/ui';
+import { PageSection } from '@/components/page-section';
 import { DataTable } from '@autional/ui/antd';
 import { aggregate, isRule, itemId } from '@/lib/model';
 import type { Item, ItemType } from '@/lib/model';
@@ -88,7 +89,7 @@ export default function DomainDetailPage() {
       <Alert className="mb-4" type="info" showIcon title={t('domains.inheritHint')} />
 
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-        <SectionCard padding="none" className="self-start">
+        <PageSection  className="self-start">
           <div className="px-3 py-2 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
             {t('domains.groupList')}
           </div>
@@ -120,9 +121,9 @@ export default function DomainDetailPage() {
               </li>
             ))}
           </ul>
-        </SectionCard>
+        </PageSection>
 
-        <SectionCard>
+        <PageSection>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Input.Search
               allowClear
@@ -232,7 +233,7 @@ export default function DomainDetailPage() {
                   ]
             }
           />
-        </SectionCard>
+        </PageSection>
       </div>
 
       {modal ? (
