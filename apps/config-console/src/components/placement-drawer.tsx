@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Popconfirm, Space, Tag, Typography } from 'antd';
 import { Drawer, DataTable } from '@autional/ui/antd';
 import { useTranslation } from 'react-i18next';
@@ -31,6 +31,7 @@ export function PlacementDrawer(props: {
   const [revealFor, setRevealFor] = useState<Item | null>(null);
   const [revealBusy, setRevealBusy] = useState(false);
   const [revealError, setRevealError] = useState('');
+  const revealTimers = useRef<Record<string, number>>({});
   const [history, setHistory] = useState<{ item: Item; rows: HistoryEntry[]; loading: boolean; error: string } | null>(null);
 
   const openKey = state?.key ?? '';
@@ -41,7 +42,11 @@ export function PlacementDrawer(props: {
     setRevealFor(null);
     setRevealError('');
     setHistory(null);
-    return () => RevealCache.clear({ key: openKey });
+    return () => {
+      RevealCache.clear({ key: openKey });
+      Object.values(revealTimers.current).forEach((timer) => window.clearTimeout(timer));
+      revealTimers.current = {};
+    };
   }, [openKey]);
 
   useEffect(() => {
@@ -75,6 +80,19 @@ export function PlacementDrawer(props: {
       RevealCache.put(item.s, item.k, res.value);
       setRevealed((prev) => ({ ...prev, [itemId(item.s, item.k)]: res.value }));
       setRevealFor(null);
+
+      // 30 秒后自动隐藏：清 state 与进程内缓存，避免明文长期停留。
+      const id = itemId(item.s, item.k);
+      if (revealTimers.current[id]) window.clearTimeout(revealTimers.current[id]);
+      revealTimers.current[id] = window.setTimeout(() => {
+        setRevealed((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        RevealCache.clear({ service_name: item.s, key: item.k });
+        delete revealTimers.current[id];
+      }, 30_000);
     } catch (err) {
       setRevealError(errorStatus(err) === 403 ? t('reveal.forbidden') : errorText(err));
     } finally {
