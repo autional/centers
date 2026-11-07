@@ -24,9 +24,9 @@
 - 影响：`.com`（英文）下进入配置组，字段名仍是中文。
 - 方案（已论证，不需要改 Go）：
   1. `editors.ts` 的 `label/hint/note` 改为 `{ zh, en }`（或并列 `labelEn`）；
-  2. `apps/config-console/scripts/gen-editors-seed.mjs` 从 `editors.ts` 生成
-     `shared/service-config/internal/editorsseed/seed.json`（服务端 `Schema` 是 `json.RawMessage`，
-     不需要 DDL / Go 代码改动）；
+  2. **已落地**：`pnpm gen:editors [输出路径]`（`scripts/gen-editors-seed.ts`）从 `editors.ts`
+     生成 `shared/service-config/internal/editorsseed/seed.json`。已实测：生成结果与现有 seed.json
+     **逐字一致**（51 组）。服务端 `Schema` 是 `json.RawMessage`，不需要 DDL / Go 代码改动；
   3. 渲染层按当前语言取值；`store.editor()` 返回的服务端 schema 同样按语言读取。
 - 关键词条 688 条（去重后），建议先做术语表（对齐 admin 的 `zh-CN.json` / `en-US.json`）。
 
