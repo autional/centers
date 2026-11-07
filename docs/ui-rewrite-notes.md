@@ -188,3 +188,25 @@ secret / secrets / audit / secrets?key=…（深链直接开抽屉）
 - secret 明文 **30 秒自动隐藏**；关闭抽屉同时清除（与 README 安全口径一致）。
 - secret 概览增加 **API 连通徽标**（`checkApi`，仅 api 模式）。
 - secret `security_admin`（且非 super_admin/admin）时 **写入入口禁用**，服务端仍兜底 403。
+
+---
+
+## 发布记录（2026-11-07）
+
+| 仓库 | PR | CI | Vercel |
+|---|---|---|---|
+| config | https://github.com/autional/config/pull/1 | ✅ test（32s，含英译门禁 + build） | ✅ config / cn-config Deployment completed |
+| secret | https://github.com/autional/secret/pull/1 | ✅ test（27s） | ✅ secret / cn-secret Deployment completed |
+| ui | 直接推 main（registry） | ✅ verify（19s） | —（非站点仓） |
+
+Preview（Vercel 团队默认开 SSO 保护，需登录访问）：
+
+```
+https://config-git-feat-ui-rewrite-jd7438716-gmailcoms-projects.vercel.app
+https://cn-config-git-feat-ui-rewrite-jd7438716-gmailcoms-projects.vercel.app
+https://secret-git-feat-ui-rewrite-jd7438716-gmailcoms-projects.vercel.app
+https://cn-secret-git-feat-ui-rewrite-jd7438716-gmailcoms-projects.vercel.app
+```
+
+自动化冒烟被 SSO 挡在 Vercel 登录页（HTTP 200 + `Login – Vercel`），因此 **Preview 的页面级确认需要人工登录看一眼**；
+本地生产构建的 9 路由 headless 冒烟已全绿（见上）。
