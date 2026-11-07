@@ -129,3 +129,17 @@ node D:\ws\deploy-sync\ui\scripts\check-consistency.mjs
 
 （旧克隆里的 `consumer-targets.json` / `antd-entries.json` 已同步为同一份内容，未提交，
 以免与用户原有的 3 个未提交文件混在一起。）
+
+
+---
+
+## 附：暗色画布实测（2026-11-07，headless Chrome）
+
+| 站点 | html/body 背景 | 顶栏/侧栏 | 正文色 |
+|---|---|---|---|
+| config | `#041d31` | `#0a2940` | `#f8fbfe` |
+| secret | `#041d31` | `#0a2940` | `#f8fbfe` |
+
+结论：令牌在 `<html>` / `<body>` / AppShell 三层都正确生效，此前「body 仍为浅色」是桌面浏览器工具
+在切换过程中的读数，不是样式缺陷。顺带修掉 secret 的 `ThemeProvider storageKey` 仍沿用
+`config-console-theme` 的问题（改为 `secret-console-theme`）。
